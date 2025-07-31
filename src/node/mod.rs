@@ -1,4 +1,7 @@
-pub mod hi_signal;
+
+pub mod gate;
+pub use gate::Gate;
+
 use egui::{
     Label, Response, SelectableLabel, Sense, Ui, Widget, text_selection::LabelSelectionState,
 };
@@ -14,8 +17,8 @@ trait Logical {
 pub struct LogicGateTemplate {
     pub label: String,
 
-    ins: Vec<Input>,
-    outs: Vec<Output>,
+    pub ins: Vec<Input>,
+    pub outs: Vec<Output>,
 }
 
 impl LogicGateTemplate {
@@ -78,13 +81,15 @@ impl Widget for LogicGateTemplate {
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Input {
-    signal: bool,
-    connected: bool,
+    pub name: Option<String>,
+    pub signal: bool,
+    pub connected: bool,
 }
 
 impl Input {
     pub fn new() -> Self {
         Input {
+            name: None,
             signal: false,
             connected: false,
         }
@@ -94,14 +99,16 @@ impl Input {
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Output {
-    signal: bool,
-    dests: Vec<Wire>,
-    connected: bool,
+    pub name: Option<String>,
+    pub connected: bool,
+    pub signal: bool,
+    pub dests: Vec<Wire>,
 }
 
 impl Output {
     pub fn new() -> Self {
         Output {
+            name: None,
             signal: false,
             dests: Vec::new(),
             connected: false,

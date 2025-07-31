@@ -7,7 +7,7 @@ use log::Log;
 use serde;
 
 use super::node::*;
-
+use super::Gate;
 
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -21,8 +21,8 @@ pub struct MyApp {
 
     files_loaded: bool,
     prims: Vec<LogicGateTemplate>,
-    saved: Vec<LogicGateTemplate>
-
+    saved: Vec<LogicGateTemplate>,
+    live_data: Vec<Gate>
 }
 
 impl Default for MyApp {
@@ -35,6 +35,7 @@ impl Default for MyApp {
 
             prims: Vec::<LogicGateTemplate>::new(),
             saved: Vec::<LogicGateTemplate>::new(),
+            live_data: Vec::<Gate>::new()
         }
     }
 }
@@ -100,6 +101,31 @@ impl MyApp {
         gates
     }
 
+    pub fn load_data(path: &str) -> Vec<Gate> {
+        //for every line in the file, create a gate
+        let data = std::fs::read_to_string(path).unwrap();
+        let lines = data.lines();
+        let mut gates = Vec::<Gate>::new();
+        for l in lines {
+            let split = l.split(":");
+            let mut parts = Vec::<&str>::new();
+
+            for n in split {
+                parts.push(n)
+            }
+            if parts.len() < 3 {
+                continue; // skip invalid lines
+            }
+            let label = parts[0].to_string();
+            let n_ins = parts[1].split("[").nth(1).and_then(|s| s.split("]").next()).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+            let n_outs = parts[2].split("[").nth(1).and_then(|s| s.split("]").next()).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+
+            println!("Creating gate: {} with {} inputs and {} outputs", label, n_ins, n_outs);
+            let gate = Gate::generate(label, n_ins, n_outs);
+            gates.push(gate);
+        }
+        gates
+    }
 
     pub fn save_gates(&self) {
         // Save each gate to a file in the saves directory, overwriting existing files
@@ -130,6 +156,8 @@ impl eframe::App for MyApp {
             self.prims= Self::load_prims();
             println!("Loaded prims: {}", self.prims.len());
 
+            self.live_data= Self::load_data("./saves/live_data");
+            println!("Loaded live data: {}", self.live_data.len());
             self.files_loaded= true
         }
         egui::SidePanel::left("Tools").show(ctx, |ui| {
@@ -173,7 +201,7 @@ impl eframe::App for MyApp {
             })
         });
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::TopBottomPanel::top("top_panel_bar").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
 
             egui::MenuBar::new().ui(ui, |ui| {
@@ -210,5 +238,26 @@ impl eframe::App for MyApp {
             });
         });
 
+        egui::CentralPanel::default().show(ctx, |ui|{
+            dnd(ui, "Editor Zone").show_vec(
+                &mut self.live_data,
+                |ui, item, handle, state|{
+                    let gate: egui::Button= item.get_widget(|ui|{});
+
+                    handle.ui(ui, |ui| {
+                        ui.add(
+                            gate
+                            .sense((egui::Sense::click()|
+                                   egui::Sense::drag()))
+                        );
+                        // If you want to show checkboxes for each input, you can do something like:
+                        for input in &item.ins {
+                            ui.add(egui::Checkbox::new(&mut input.connected.clone(), format!("Input {}", input.signal)));
+                        }
+                    });
+                }
+            )
+        });
     }
 }
+
