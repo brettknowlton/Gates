@@ -1,8 +1,10 @@
+use std::ptr::null;
+
 use eframe::{
     glow::{LEFT, RIGHT},
     *,
 };
-use egui::{Pos2, UiBuilder, Widget};
+use egui::{CursorIcon, Pos2, UiBuilder};
 use egui_dnd::dnd;
 use log::Log;
 use serde;
@@ -12,6 +14,7 @@ use super::node::*;
 
 mod pan_area;
 use pan_area::PanArea;
+
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -26,7 +29,10 @@ pub struct MyApp {
     prims: Vec<ToolboxItem>,
     saved: Vec<ToolboxItem>,
     live_data: Vec<Gate>,
+
     pan_center: Pos2,
+
+    dragging_id: Option<egui::Id>,
 }
 
 impl Default for MyApp {
@@ -42,6 +48,7 @@ impl Default for MyApp {
             live_data: Vec::<Gate>::new(),
 
             pan_center: Pos2::new(0.0, 0.0),
+            dragging_id: None,
         }
     }
 }
@@ -98,7 +105,7 @@ impl MyApp {
             let n2 = parts[2].parse::<i32>();
             if let Ok(n1) = n1 {
                 if let Ok(n2) = n2 {
-                    let new_gate = ToolboxItem::toolbox_from_primitive(parts[0], n1, n2);
+                    let new_gate = ToolboxItem::toolbox_from_values(parts[0], n1, n2);
                     gates.push(new_gate);
                 }
             }
@@ -198,7 +205,7 @@ impl eframe::App for MyApp {
 
                 for g in &self.saved {
                     ui.horizontal(|ui| {
-                        ui.add(g.toolbox_from_save_file());
+                        ui.add(g.make_primitive());
 
                         if ui.button("Edit").clicked() {
                             // Remove the gate from the saved gates
@@ -236,6 +243,8 @@ impl eframe::App for MyApp {
             });
         });
 
+        let mut dnd_menu= None;
+
         egui::TopBottomPanel::top("Primitive Library").show(ctx, |ui| {
             ui.set_min_height(150.);
             ui.horizontal(|ui| {
@@ -245,23 +254,49 @@ impl eframe::App for MyApp {
 
             // println!("Primitive gates: {:?}", self.primitive_gates);
             ui.horizontal_centered(|ui| {
-                dnd(ui, "Primitive Library").show_vec(
+                dnd_menu = Some(dnd(ui, "Primitive").show_vec(
                     &mut self.prims,
                     |ui, item, handle, _state| {
-                        handle.ui(ui, |ui| {
+                        let ui_item = handle.ui(ui, |ui| {
                             ui.add(item.make_primitive());
                         });
+
                     },
-                );
+                ));
+                if let Some(dnd_menu) = dnd_menu {
+                    self.dragging_id = dnd_menu.dragged_item_id();
+                    println!("Dragging ID: {:?}", self.dragging_id);
+                }
+
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut new_pan_center = self.pan_center; // copy the value (Pos2 is Copy)
+            //if drag released in this panel, add the gate to the live data if it was a primitive
 
             ui.add(PanArea::new(
                 &mut new_pan_center,
                 |ui: &mut egui::Ui, pan_center: Pos2| {
+
+                    // Check if we are dragging a primitive gate
+                    if ui.input(|i| i.pointer.any_released()) {
+                        if let Some(id) = self.dragging_id {
+                            if let Some(dnd_menu) = dnd_menu {
+                                // Check if the dragged item is a primitive
+                                if let Some(item) = dnd_menu.dragged_item_id() {
+                                    if let GateType::Primitive(name) = item {
+                                        // Create a new gate from the primitive
+                                        let new_gate = Gate::new(name);
+                                        new_gate.position = gate::GridVec2::from_pos2(pan_center);
+                                        self.live_data.push(new_gate);
+                                        self.dragging_id = None; // Reset dragging state
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // draw logic here using `pan_center`
                     for gate in &self.live_data {
                         // Get gate world position
@@ -272,20 +307,18 @@ impl eframe::App for MyApp {
 
                         // Place the widget at the screen position
                         let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
-                        let widget = gate.get_widget(|ui| {
-                            // Draw internal UI if needed 
-                        });
-                        let builder= UiBuilder::new() 
+                        let widget = Gate::generate(gate.label.clone(), gate.n_in, gate.n_out);
+                        let builder = UiBuilder::new()
                             .max_rect(rect)
                             .sense(egui::Sense::click_and_drag());
                         ui.scope_builder(builder, |ui| {
                             ui.add(widget);
                         });
                     }
+
+                    self.pan_center = pan_center; // update AFTER the widget runs
                 },
             ));
-
-            self.pan_center = new_pan_center; // update AFTER the widget runs
         });
     }
 }

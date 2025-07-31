@@ -1,7 +1,7 @@
 
 use super::*;
 use egui::{epaint::RectShape, Vec2, Ui};
-use egui::{Color32, Pos2, Rect, Stroke, StrokeKind};
+use egui::{Color32, Id, Pos2, Rect, Stroke, StrokeKind};
 
 use std::hash::Hash;
 
@@ -12,11 +12,21 @@ pub struct Gate {
     pub position: GridVec2,
     pub size: GridVec2,
 
+    //logical properties
     pub n_in: usize,
     pub ins: Vec<Input>,
 
     pub n_out: usize,
     pub outs: Vec<Output>,
+
+    pub kind: GateType,
+}
+
+impl Logical for Gate {
+
+    fn tick(self) {
+        println!("This is a generic gate being ticked: {}", self.label);
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
@@ -88,6 +98,8 @@ impl Gate {
             ins: Self::create_inputs(n_ins),
             n_out: n_outs,
             outs: Self::create_outputs(n_outs),
+
+            kind: GateType::None, // Default type, can be changed later
         }
     }
 
@@ -98,19 +110,24 @@ impl Gate {
         self.outs.iter().map(|o| o.signal).collect()
     }
 
-    pub fn from_template(t: &mut ToolboxItem) -> Gate {
-        let n_ins = t.ins.len();
-        let n_outs = t.outs.len();
+    pub fn from_template_id(t: &Id, pos: Pos2) -> Gate {
+        print!("Creating gate from template ID: {:?}", t);
+        match t {
+            Id::new("Button") => Self::from_template(t, pos, 0, 1),
+            Id::new("Light") => Self::from_template(t, pos, 1, 0),
+            _ => Self::from_template(t, pos, 0, 0), // Default case
+        }
 
         Gate {
             label: t.label.clone(),
-            position: GridVec2::new(0.0, 0.0),
+            position: GridVec2::new(pos.x, pos.y),
             size: GridVec2::new(150.0, 110.0),
 
             n_in: n_ins,
             ins: Self::create_inputs(n_ins),
             n_out: n_outs,
             outs: Self::create_outputs(n_outs),
+            kind: t.kind.clone(),
         }
     }
 
@@ -130,15 +147,32 @@ impl Gate {
         new_outs
     }
 
-    pub fn get_widget<'a>(&self, ui: impl FnOnce(&mut Ui)) -> egui::Button<'a> {
-        egui::Button::selectable(
-            false, // or set to true if you want it selected by default
-            format!("{}: {} :{}", self.n_in, self.label, self.n_out),
-        )
-        .min_size(Vec2::new(150., 110.))
-    }
+    // pub fn get_widget<'a>(&self, ui: impl FnOnce(&mut Ui)) -> egui::Button<'a> {
+
+    //     egui::Button::selectable(
+    //         false, // or set to true if you want it selected by default
+    //         format!("{}: {} :{}", self.n_in, self.label, self.n_out),
+    //     )
+    //     .min_size(Vec2::new(150., 110.))
+    //     .corner_radius(10.)
+    //     .sense(Sense::drag())
+    //     .fill(Color32::from_rgb(30,30,30))
+    // }
 
     pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
+        let kind: GateType;
+        match label.as_str() {
+            "Button" => {
+                kind = GateType::Primitive(PrimitiveKind::Button);
+            }
+            "Light" => {
+                kind = GateType::Primitive(PrimitiveKind::Light);
+            }
+            _ => {
+                kind = GateType::Primitive(PrimitiveKind::None);
+            }
+        }
+        
         Gate {
             label,
             position: GridVec2::new(0.0, 0.0),
@@ -148,6 +182,7 @@ impl Gate {
             ins: Self::create_inputs(n_ins),
             n_out: n_outs,
             outs: Self::create_outputs(n_outs),
+            kind
         }
     }
 }

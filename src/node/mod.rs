@@ -1,5 +1,7 @@
 
 pub mod gate;
+use std::default;
+
 pub use gate::Gate;
 use super::*;
 
@@ -8,53 +10,66 @@ use egui::{
 };
 
 trait Logical {
-    fn new() -> impl Logical;
 
     fn tick(self);
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
+pub enum GateType {
+    #[default]
+    None,
+    Primitive(PrimitiveKind),
+    Custom,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
+pub enum PrimitiveKind {
+    #[default]
+    None,
+    Button,
+    Light,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct ToolboxItem {
     pub label: String,
-
-    pub ins: Vec<Input>,
-    pub outs: Vec<Output>,
+    pub kind: GateType,
+    pub n_ins: i32,
+    pub n_outs: i32,
 }
 
 impl ToolboxItem {
     pub fn new(n: String) -> ToolboxItem {
         ToolboxItem {
             label: n,
-            ins: Vec::<Input>::new(),
-            outs: Vec::<Output>::new(),
+            n_ins: 0,
+            n_outs: 0,
+            kind: GateType::None,
         }
     }
 
-    pub fn toolbox_from_save_file(&self) -> egui::Button<'static> {
-        egui::Button::selectable(
-            false, // or set to true if you want it selected by default
-            format!("{}: {} :{}", self.ins.len(), self.label, self.outs.len()),
-        )
-        .sense(Sense::click())
-    }
 
-    pub fn toolbox_from_primitive(label: &str, num_inputs: i32, num_outputs: i32) -> ToolboxItem {
-        let mut ins = Vec::new();
-        let mut outs = Vec::new();
-
-        for _ in 0..num_inputs {
-            ins.push(Input::new());
-        }
-        for _ in 0..num_outputs {
-            outs.push(Output::new());
+    pub fn toolbox_from_values(label: &str, num_inputs: i32, num_outputs: i32) -> ToolboxItem {
+        let kind: GateType;
+        match label {
+            "Button" => {
+                kind = GateType::Primitive(PrimitiveKind::Button);
+            }
+            "Light" => {
+                kind = GateType::Primitive(PrimitiveKind::Light);
+            }
+            _ => {
+                kind = GateType::Primitive(PrimitiveKind::None);
+            }
         }
 
         let full_label = format!("{}: {} :{}", num_inputs, label, num_outputs);
         let var = ToolboxItem {
             label: full_label,
-            ins,
-            outs,
+            n_ins: num_inputs,
+            n_outs: num_outputs,
+            kind,
         };
         var
     }
@@ -67,7 +82,8 @@ impl ToolboxItem {
         )
         .min_size(egui::vec2(110., 110.))
         .corner_radius(10.)
-        .sense(Sense::drag());
+        .sense(Sense::drag())
+        .sense(Sense::click());
 
         return var;
     }

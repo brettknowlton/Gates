@@ -1,2 +1,1 @@
-BUTTON{0}:Inputs[0]{}:Outputs[1]{OR{0}}
-OR{0}:[3]{BUTTON{0}, None, None}:[1]{None}
+BUTTON{0}:[0]{}:[1]{OR{0}}
