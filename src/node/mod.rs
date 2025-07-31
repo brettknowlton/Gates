@@ -1,6 +1,7 @@
 
 pub mod gate;
 pub use gate::Gate;
+use super::*;
 
 use egui::{
     Label, Response, SelectableLabel, Sense, Ui, Widget, text_selection::LabelSelectionState,
@@ -14,23 +15,23 @@ trait Logical {
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct LogicGateTemplate {
+pub struct ToolboxItem {
     pub label: String,
 
     pub ins: Vec<Input>,
     pub outs: Vec<Output>,
 }
 
-impl LogicGateTemplate {
-    pub fn new(n: String) -> LogicGateTemplate {
-        LogicGateTemplate {
+impl ToolboxItem {
+    pub fn new(n: String) -> ToolboxItem {
+        ToolboxItem {
             label: n,
             ins: Vec::<Input>::new(),
             outs: Vec::<Output>::new(),
         }
     }
 
-    pub fn make_selectable_item(&self) -> egui::Button<'static> {
+    pub fn toolbox_from_save_file(&self) -> egui::Button<'static> {
         egui::Button::selectable(
             false, // or set to true if you want it selected by default
             format!("{}: {} :{}", self.ins.len(), self.label, self.outs.len()),
@@ -38,7 +39,7 @@ impl LogicGateTemplate {
         .sense(Sense::click())
     }
 
-    pub fn primitive_from(label: &str, num_inputs: i32, num_outputs: i32) -> LogicGateTemplate {
+    pub fn toolbox_from_primitive(label: &str, num_inputs: i32, num_outputs: i32) -> ToolboxItem {
         let mut ins = Vec::new();
         let mut outs = Vec::new();
 
@@ -50,7 +51,7 @@ impl LogicGateTemplate {
         }
 
         let full_label = format!("{}: {} :{}", num_inputs, label, num_outputs);
-        let var = LogicGateTemplate {
+        let var = ToolboxItem {
             label: full_label,
             ins,
             outs,
@@ -72,7 +73,7 @@ impl LogicGateTemplate {
     }
 }
 
-impl Widget for LogicGateTemplate {
+impl Widget for ToolboxItem {
     fn ui(self, ui: &mut Ui) -> Response {
         todo!()
     }

@@ -1,11 +1,10 @@
-use egui;
+pub use egui;
 
-mod app;
-use app::*;
+pub mod app;
+pub use app::*;
 
-mod node;
-use node::*;
-
+pub mod node;
+pub use node::*;
 
 
 fn main() -> eframe::Result {

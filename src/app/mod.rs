@@ -2,13 +2,16 @@ use eframe::{
     glow::{LEFT, RIGHT},
     *,
 };
-use egui_canvas::Canvas;
+use egui::{Pos2, UiBuilder, Widget};
 use egui_dnd::dnd;
 use log::Log;
 use serde;
 
 use super::Gate;
 use super::node::*;
+
+mod pan_area;
+use pan_area::PanArea;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -20,9 +23,10 @@ pub struct MyApp {
     value: f32,
 
     files_loaded: bool,
-    prims: Vec<LogicGateTemplate>,
-    saved: Vec<LogicGateTemplate>,
+    prims: Vec<ToolboxItem>,
+    saved: Vec<ToolboxItem>,
     live_data: Vec<Gate>,
+    pan_center: Pos2,
 }
 
 impl Default for MyApp {
@@ -33,9 +37,11 @@ impl Default for MyApp {
             value: 2.7,
             files_loaded: false,
 
-            prims: Vec::<LogicGateTemplate>::new(),
-            saved: Vec::<LogicGateTemplate>::new(),
+            prims: Vec::<ToolboxItem>::new(),
+            saved: Vec::<ToolboxItem>::new(),
             live_data: Vec::<Gate>::new(),
+
+            pan_center: Pos2::new(0.0, 0.0),
         }
     }
 }
@@ -51,8 +57,8 @@ impl MyApp {
         }
     }
 
-    pub fn load_gates() -> Vec<LogicGateTemplate> {
-        let mut gates = Vec::<LogicGateTemplate>::new();
+    pub fn load_gates() -> Vec<ToolboxItem> {
+        let mut gates = Vec::<ToolboxItem>::new();
 
         //read saves directory for each file add a gate to the vector
         let dir = std::fs::read_dir("./saves").unwrap();
@@ -65,7 +71,7 @@ impl MyApp {
                 let file_name = entry.file_name().into_string().unwrap();
                 if file_name.ends_with(".gate") {
                     // Load the gate from the file
-                    let gate_template = LogicGateTemplate::new(file_name);
+                    let gate_template = ToolboxItem::new(file_name);
                     gates.push(gate_template);
                 }
             }
@@ -74,8 +80,8 @@ impl MyApp {
         gates
     }
 
-    pub fn load_prims() -> Vec<LogicGateTemplate> {
-        let mut gates = Vec::<LogicGateTemplate>::new();
+    pub fn load_prims() -> Vec<ToolboxItem> {
+        let mut gates = Vec::<ToolboxItem>::new();
 
         //read saves directory for each file add a gate to the vector
         let data = std::fs::read_to_string("./saves/primitives").unwrap();
@@ -92,7 +98,7 @@ impl MyApp {
             let n2 = parts[2].parse::<i32>();
             if let Ok(n1) = n1 {
                 if let Ok(n2) = n2 {
-                    let new_gate = LogicGateTemplate::primitive_from(parts[0], n1, n2);
+                    let new_gate = ToolboxItem::toolbox_from_primitive(parts[0], n1, n2);
                     gates.push(new_gate);
                 }
             }
@@ -181,7 +187,7 @@ impl eframe::App for MyApp {
                 //display all saved gates in a vertical list
                 // Add a button to create a new gate
                 if ui.button("New Gate").clicked() {
-                    let new_gate = LogicGateTemplate::new("New Gate".to_string());
+                    let new_gate = ToolboxItem::new("New Gate".to_string());
                     self.saved.push(new_gate);
                     self.save_gates();
                 };
@@ -192,7 +198,7 @@ impl eframe::App for MyApp {
 
                 for g in &self.saved {
                     ui.horizontal(|ui| {
-                        ui.add(g.make_selectable_item());
+                        ui.add(g.toolbox_from_save_file());
 
                         if ui.button("Edit").clicked() {
                             // Remove the gate from the saved gates
@@ -251,15 +257,35 @@ impl eframe::App for MyApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut canvas = Canvas::default();
-            for item in &self.live_data {
-                let gate: egui::Button = item.get_widget(|ui| {
-                        ui.label(format!("{}: {} :{}", item.n_in, item.label, item.n_out));
-                    });
-                canvas.add(gate);
-            }
+            let mut new_pan_center = self.pan_center; // copy the value (Pos2 is Copy)
 
-            ui.add(canvas);
+            ui.add(PanArea::new(
+                &mut new_pan_center,
+                |ui: &mut egui::Ui, pan_center: Pos2| {
+                    // draw logic here using `pan_center`
+                    for gate in &self.live_data {
+                        // Get gate world position
+                        let world_pos = &gate.position;
+
+                        // Convert to screen-local position
+                        let screen_pos = world_pos.to_pos2() - pan_center.to_vec2();
+
+                        // Place the widget at the screen position
+                        let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
+                        let widget = gate.get_widget(|ui| {
+                            // Draw internal UI if needed 
+                        });
+                        let builder= UiBuilder::new() 
+                            .max_rect(rect)
+                            .sense(egui::Sense::click_and_drag());
+                        ui.scope_builder(builder, |ui| {
+                            ui.add(widget);
+                        });
+                    }
+                },
+            ));
+
+            self.pan_center = new_pan_center; // update AFTER the widget runs
         });
     }
 }
