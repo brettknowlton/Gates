@@ -2,13 +2,13 @@ use eframe::{
     glow::{LEFT, RIGHT},
     *,
 };
+use egui_canvas::Canvas;
 use egui_dnd::dnd;
 use log::Log;
 use serde;
 
-use super::node::*;
 use super::Gate;
-
+use super::node::*;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -22,7 +22,7 @@ pub struct MyApp {
     files_loaded: bool,
     prims: Vec<LogicGateTemplate>,
     saved: Vec<LogicGateTemplate>,
-    live_data: Vec<Gate>
+    live_data: Vec<Gate>,
 }
 
 impl Default for MyApp {
@@ -35,7 +35,7 @@ impl Default for MyApp {
 
             prims: Vec::<LogicGateTemplate>::new(),
             saved: Vec::<LogicGateTemplate>::new(),
-            live_data: Vec::<Gate>::new()
+            live_data: Vec::<Gate>::new(),
         }
     }
 }
@@ -74,22 +74,22 @@ impl MyApp {
         gates
     }
 
-    pub fn load_prims()-> Vec<LogicGateTemplate>{
+    pub fn load_prims() -> Vec<LogicGateTemplate> {
         let mut gates = Vec::<LogicGateTemplate>::new();
 
         //read saves directory for each file add a gate to the vector
         let data = std::fs::read_to_string("./saves/primitives").unwrap();
-        let lines= data.lines();
+        let lines = data.lines();
         for l in lines {
             print!("Loading gate: ");
             let split = l.split(":");
-            let mut parts= Vec::<&str>::new();
+            let mut parts = Vec::<&str>::new();
 
-            for n in split{
+            for n in split {
                 parts.push(n)
             }
-            let n1= parts[1].parse::<i32>();
-            let n2= parts[2].parse::<i32>();
+            let n1 = parts[1].parse::<i32>();
+            let n2 = parts[2].parse::<i32>();
             if let Ok(n1) = n1 {
                 if let Ok(n2) = n2 {
                     let new_gate = LogicGateTemplate::primitive_from(parts[0], n1, n2);
@@ -117,10 +117,25 @@ impl MyApp {
                 continue; // skip invalid lines
             }
             let label = parts[0].to_string();
-            let n_ins = parts[1].split("[").nth(1).and_then(|s| s.split("]").next()).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
-            let n_outs = parts[2].split("[").nth(1).and_then(|s| s.split("]").next()).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+            let n_ins = parts[1]
+                .split("[")
+                .nth(1)
+                .and_then(|s| s.split("]").next())
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
+            let n_outs = parts[2]
+                .split("[")
+                .nth(1)
+                .and_then(|s| s.split("]").next())
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0);
 
-            println!("Creating gate: {} with {} inputs and {} outputs", label, n_ins, n_outs);
+            println!(
+                "Creating gate: {} with {} inputs and {} outputs",
+                label, n_ins, n_outs
+            );
+            println!("Parts: {:?}", parts);
+
             let gate = Gate::generate(label, n_ins, n_outs);
             gates.push(gate);
         }
@@ -139,26 +154,24 @@ impl MyApp {
 }
 
 impl eframe::App for MyApp {
-
     /// Called by the framework to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
-    
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        if !self.files_loaded{
-            self.saved= Self::load_gates();
+        if !self.files_loaded {
+            self.saved = Self::load_gates();
             println!("Loaded saves: {}", self.saved.len());
 
-            self.prims= Self::load_prims();
+            self.prims = Self::load_prims();
             println!("Loaded prims: {}", self.prims.len());
 
-            self.live_data= Self::load_data("./saves/live_data");
+            self.live_data = Self::load_data("./saves/live_data");
             println!("Loaded live data: {}", self.live_data.len());
-            self.files_loaded= true
+            self.files_loaded = true
         }
         egui::SidePanel::left("Tools").show(ctx, |ui| {
             ui.set_min_width(400.);
@@ -229,7 +242,6 @@ impl eframe::App for MyApp {
                 dnd(ui, "Primitive Library").show_vec(
                     &mut self.prims,
                     |ui, item, handle, _state| {
-
                         handle.ui(ui, |ui| {
                             ui.add(item.make_primitive());
                         });
@@ -238,26 +250,16 @@ impl eframe::App for MyApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui|{
-            dnd(ui, "Editor Zone").show_vec(
-                &mut self.live_data,
-                |ui, item, handle, state|{
-                    let gate: egui::Button= item.get_widget(|ui|{});
-
-                    handle.ui(ui, |ui| {
-                        ui.add(
-                            gate
-                            .sense((egui::Sense::click()|
-                                   egui::Sense::drag()))
-                        );
-                        // If you want to show checkboxes for each input, you can do something like:
-                        for input in &item.ins {
-                            ui.add(egui::Checkbox::new(&mut input.connected.clone(), format!("Input {}", input.signal)));
-                        }
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let mut canvas = Canvas::default();
+            for item in &self.live_data {
+                let gate: egui::Button = item.get_widget(|ui| {
+                        ui.label(format!("{}: {} :{}", item.n_in, item.label, item.n_out));
                     });
-                }
-            )
+                canvas.add(gate);
+            }
+
+            ui.add(canvas);
         });
     }
 }
-

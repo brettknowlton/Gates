@@ -13,18 +13,26 @@ pub struct Gate {
     pub n_out: usize,
     pub outs: Vec<Output>,
 }
+
 impl Gate {
-    pub fn new(n: String) -> Gate {
+    pub fn new(name: String) -> Gate {
         let n_ins= 0;
         let n_outs = 0;
 
         Gate {
-            label: n,
+            label: name,
             n_in: n_ins,
             ins: Self::create_inputs(n_ins),
             n_out: n_outs,
-            outs: Self::create_outputs(n_ins),
+            outs: Self::create_outputs(n_outs),
         }
+    }
+
+    pub fn get_signal_in(&self) -> Vec<bool> {
+        self.ins.iter().map(|i| i.signal).collect()
+    }
+    pub fn get_signal_out(&self) -> Vec<bool> {
+        self.outs.iter().map(|o| o.signal).collect()
     }
 
     pub fn from_template(t: &mut LogicGateTemplate) -> Gate {
@@ -64,14 +72,13 @@ impl Gate {
     }
 
     pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
-        let mut new = Gate {
+        Gate {
             label,
             n_in: n_ins,
             ins: Self::create_inputs(n_ins),
             n_out: n_outs,
             outs: Self::create_outputs(n_outs),
-        };
-        new
+        }
     }
 
 }
