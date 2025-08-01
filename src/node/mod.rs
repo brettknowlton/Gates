@@ -1,6 +1,6 @@
 
 pub mod gate;
-use std::default;
+use std::{default, fmt::Display};
 
 pub use gate::Gate;
 use super::*;
@@ -21,52 +21,85 @@ pub enum GateType {
     Primitive(PrimitiveKind),
     Custom,
 }
+impl Display for GateType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GateType::None => write!(f, "None"),
+            GateType::Primitive(kind) => write!(f, "{}", kind),
+            GateType::Custom => write!(f, "Custom"),
+        }
+    }
+}
+
+impl GateType {
+    pub fn lookup_kind(name: &str) -> GateType {
+        match name {
+            "Button" => GateType::Primitive(PrimitiveKind::BUTTON),
+            "Light" => GateType::Primitive(PrimitiveKind::LIGHT),
+            _ => GateType::None,
+        }
+    }
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 pub enum PrimitiveKind {
     #[default]
     None,
-    Button,
-    Light,
+    BUTTON,
+    LIGHT,
+}
+
+impl Display for PrimitiveKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrimitiveKind::None => write!(f, "None"),
+            PrimitiveKind::BUTTON => write!(f, "Button"),
+            PrimitiveKind::LIGHT=> write!(f, "Light"),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct ToolboxItem {
+pub struct Primitive {
     pub label: String,
     pub kind: GateType,
-    pub n_ins: i32,
-    pub n_outs: i32,
+    pub n_ins: usize,
+    pub n_outs: usize,
 }
 
-impl ToolboxItem {
-    pub fn new(n: String) -> ToolboxItem {
-        ToolboxItem {
+impl Primitive {
+    pub fn new(n: String) -> Primitive {
+
+        let k= GateType::lookup_kind(&n);
+
+        Primitive {
             label: n,
             n_ins: 0,
             n_outs: 0,
-            kind: GateType::None,
+            kind: k,
         }
     }
 
+    pub fn kind_as_str(self) -> String {
+        self.kind.to_string().clone()
+    }
 
-    pub fn toolbox_from_values(label: &str, num_inputs: i32, num_outputs: i32) -> ToolboxItem {
+    pub fn from_values(label: &str, num_inputs: usize, num_outputs: usize) -> Primitive {
         let kind: GateType;
         match label {
-            "Button" => {
-                kind = GateType::Primitive(PrimitiveKind::Button);
+            "BUTTON" => {
+                kind = GateType::Primitive(PrimitiveKind::BUTTON);
             }
-            "Light" => {
-                kind = GateType::Primitive(PrimitiveKind::Light);
+            "LIGHT" => {
+                kind = GateType::Primitive(PrimitiveKind::LIGHT);
             }
             _ => {
                 kind = GateType::Primitive(PrimitiveKind::None);
             }
         }
-
-        let full_label = format!("{}: {} :{}", num_inputs, label, num_outputs);
-        let var = ToolboxItem {
-            label: full_label,
+        let var = Primitive {
+            label: label.to_string(),
             n_ins: num_inputs,
             n_outs: num_outputs,
             kind,
@@ -74,7 +107,7 @@ impl ToolboxItem {
         var
     }
 
-    pub fn make_primitive(&self) -> egui::Button<'static> {
+    pub fn make_prim_widget(&self) -> egui::Button<'static> {
         //square selectable button that takes a label and number of inputs and outputs
         let var = egui::Button::selectable(
             false, // or set to true if you want it selected by default
@@ -84,19 +117,18 @@ impl ToolboxItem {
         .corner_radius(10.)
         .sense(Sense::drag())
         .sense(Sense::click());
-
         return var;
     }
 }
 
-impl Widget for ToolboxItem {
+impl Widget for Primitive {
     fn ui(self, ui: &mut Ui) -> Response {
         todo!()
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
+#[serde(default)]
 pub struct Input {
     pub name: Option<String>,
     pub signal: bool,

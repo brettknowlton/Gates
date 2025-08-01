@@ -1,11 +1,11 @@
-use std::ptr::null;
+use std::{collections::HashMap, path::PathBuf, ptr::null};
 
 use eframe::{
     glow::{LEFT, RIGHT},
     *,
 };
-use egui::{CursorIcon, Pos2, UiBuilder};
-use egui_dnd::dnd;
+use egui::{CursorIcon, Id, Pos2, UiBuilder, epaint::tessellator::Path};
+use egui_dnd::{DragDropResponse, dnd};
 use log::Log;
 use serde;
 
@@ -14,7 +14,6 @@ use super::node::*;
 
 mod pan_area;
 use pan_area::PanArea;
-
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -26,13 +25,14 @@ pub struct MyApp {
     value: f32,
 
     files_loaded: bool,
-    prims: Vec<ToolboxItem>,
-    saved: Vec<ToolboxItem>,
+    prims: Vec<Primitive>,
+    saved: Vec<Primitive>,
+
+    current_chip: Option<PathBuf>,
     live_data: Vec<Gate>,
 
     pan_center: Pos2,
-
-    dragging_id: Option<egui::Id>,
+    dragging_kind: Option<GateType>,
 }
 
 impl Default for MyApp {
@@ -43,12 +43,14 @@ impl Default for MyApp {
             value: 2.7,
             files_loaded: false,
 
-            prims: Vec::<ToolboxItem>::new(),
-            saved: Vec::<ToolboxItem>::new(),
+            prims: Vec::new(),
+            saved: Vec::new(),
+
+            current_chip: None,
             live_data: Vec::<Gate>::new(),
 
             pan_center: Pos2::new(0.0, 0.0),
-            dragging_id: None,
+            dragging_kind: None,
         }
     }
 }
@@ -64,8 +66,8 @@ impl MyApp {
         }
     }
 
-    pub fn load_gates() -> Vec<ToolboxItem> {
-        let mut gates = Vec::<ToolboxItem>::new();
+    pub fn load_chips() -> Vec<Primitive> {
+        let mut gates = Vec::<Primitive>::new();
 
         //read saves directory for each file add a gate to the vector
         let dir = std::fs::read_dir("./saves").unwrap();
@@ -78,7 +80,7 @@ impl MyApp {
                 let file_name = entry.file_name().into_string().unwrap();
                 if file_name.ends_with(".gate") {
                     // Load the gate from the file
-                    let gate_template = ToolboxItem::new(file_name);
+                    let gate_template = Primitive::new(file_name);
                     gates.push(gate_template);
                 }
             }
@@ -87,8 +89,8 @@ impl MyApp {
         gates
     }
 
-    pub fn load_prims() -> Vec<ToolboxItem> {
-        let mut gates = Vec::<ToolboxItem>::new();
+    pub fn load_prims() -> Vec<Primitive> {
+        let mut prims: Vec<Primitive> = Vec::new();
 
         //read saves directory for each file add a gate to the vector
         let data = std::fs::read_to_string("./saves/primitives").unwrap();
@@ -101,17 +103,17 @@ impl MyApp {
             for n in split {
                 parts.push(n)
             }
-            let n1 = parts[1].parse::<i32>();
-            let n2 = parts[2].parse::<i32>();
+            let n1 = parts[1].parse::<usize>();
+            let n2 = parts[2].parse::<usize>();
             if let Ok(n1) = n1 {
                 if let Ok(n2) = n2 {
-                    let new_gate = ToolboxItem::toolbox_from_values(parts[0], n1, n2);
-                    gates.push(new_gate);
+                    let new_gate = Primitive::from_values(parts[0], n1, n2);
+                    prims.push(new_gate);
                 }
             }
         }
-        println!("Loaded {} gates", gates.len());
-        gates
+        println!("Loaded {} gates", prims.len());
+        prims
     }
 
     pub fn load_data(path: &str) -> Vec<Gate> {
@@ -155,7 +157,7 @@ impl MyApp {
         gates
     }
 
-    pub fn save_gates(&self) {
+    pub fn save_chips(&self) {
         // Save each gate to a file in the saves directory, overwriting existing files
         std::fs::create_dir_all("./saves").unwrap();
         for gate in &self.saved {
@@ -176,36 +178,34 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         if !self.files_loaded {
-            self.saved = Self::load_gates();
-            println!("Loaded saves: {}", self.saved.len());
+            self.saved = Self::load_chips();
+            println!("Loaded chips: {}", self.saved.len());
 
             self.prims = Self::load_prims();
             println!("Loaded prims: {}", self.prims.len());
 
-            self.live_data = Self::load_data("./saves/live_data");
-            println!("Loaded live data: {}", self.live_data.len());
             self.files_loaded = true
         }
         egui::SidePanel::left("Tools").show(ctx, |ui| {
             ui.set_min_width(400.);
             ui.vertical_centered_justified(|ui| {
                 //display title "Saved Gates" 3/4 the width of the panel, bold, and centered
-                ui.heading("Saved Gates");
+                ui.heading("Saved Chips");
                 //display all saved gates in a vertical list
                 // Add a button to create a new gate
-                if ui.button("New Gate").clicked() {
-                    let new_gate = ToolboxItem::new("New Gate".to_string());
-                    self.saved.push(new_gate);
-                    self.save_gates();
+                if ui.button("New Chip").clicked() {
+                    let new_chip = Primitive::new("New Chip".to_string());
+                    self.saved.push(new_chip);
+                    self.save_chips();
                 };
 
-                //two "columns" first 80% th width for gate name, second 20% width for trash icon
+                //two "columns" first 80% th width for chip name, second 20% width for trash icon
                 let mut idx = 0;
                 let mut queue_rem: Option<usize> = None;
 
                 for g in &self.saved {
                     ui.horizontal(|ui| {
-                        ui.add(g.make_primitive());
+                        ui.add(g.make_prim_widget());
 
                         if ui.button("Edit").clicked() {
                             // Remove the gate from the saved gates
@@ -215,7 +215,7 @@ impl eframe::App for MyApp {
                         if ui.button("Delete").clicked() {
                             // Remove the gate from the saved gates
                             queue_rem = Some(idx);
-                            self.save_gates();
+                            self.save_chips();
                         }
                         idx += 1;
                     });
@@ -243,8 +243,6 @@ impl eframe::App for MyApp {
             });
         });
 
-        let mut dnd_menu= None;
-
         egui::TopBottomPanel::top("Primitive Library").show(ctx, |ui| {
             ui.set_min_height(150.);
             ui.horizontal(|ui| {
@@ -254,20 +252,40 @@ impl eframe::App for MyApp {
 
             // println!("Primitive gates: {:?}", self.primitive_gates);
             ui.horizontal_centered(|ui| {
-                dnd_menu = Some(dnd(ui, "Primitive").show_vec(
-                    &mut self.prims,
-                    |ui, item, handle, _state| {
-                        let ui_item = handle.ui(ui, |ui| {
-                            ui.add(item.make_primitive());
+                let response =
+                    dnd(ui, "Primitive").show_vec(&mut self.prims, |ui, item, handle, state| {
+                        let h = handle.ui(ui, |ui| {
+                            let w = ui.add(item.make_prim_widget());
+                            if w.is_pointer_button_down_on() {
+                                self.dragging_kind = Some(item.kind.clone());
+                                println!("Dragging kind: {:?}", self.dragging_kind);
+                            } else if w.drag_stopped_by(egui::PointerButton::Primary) {
+                                if let Some(kind) = &self.dragging_kind {
+                                    let pos = ctx.pointer_hover_pos().unwrap_or(self.pan_center);
+
+                                    let new_gate = Gate::from_template_id(kind.to_string(), pos);
+
+                                    self.live_data.push(new_gate);
+                                    println!("Added new gate: {:?}", self.dragging_kind);
+
+                                    self.dragging_kind = None;
+                                }
+                                self.dragging_kind = None;
+                            } else if ui.input(|i| i.pointer.any_released()) {
+                                 if let Some(kind) = &self.dragging_kind {
+                                    let pos = ctx.pointer_hover_pos().unwrap_or(self.pan_center);
+
+                                    let new_gate = Gate::from_template_id(kind.to_string(), pos);
+
+                                    self.live_data.push(new_gate);
+                                    println!("Added new gate: {:?}", self.dragging_kind);
+
+                                    self.dragging_kind = None;
+                                }
+                                self.dragging_kind = None;
+                            }
                         });
-
-                    },
-                ));
-                if let Some(dnd_menu) = dnd_menu {
-                    self.dragging_id = dnd_menu.dragged_item_id();
-                    println!("Dragging ID: {:?}", self.dragging_id);
-                }
-
+                    });
             });
         });
 
@@ -278,27 +296,8 @@ impl eframe::App for MyApp {
             ui.add(PanArea::new(
                 &mut new_pan_center,
                 |ui: &mut egui::Ui, pan_center: Pos2| {
-
-                    // Check if we are dragging a primitive gate
-                    if ui.input(|i| i.pointer.any_released()) {
-                        if let Some(id) = self.dragging_id {
-                            if let Some(dnd_menu) = dnd_menu {
-                                // Check if the dragged item is a primitive
-                                if let Some(item) = dnd_menu.dragged_item_id() {
-                                    if let GateType::Primitive(name) = item {
-                                        // Create a new gate from the primitive
-                                        let new_gate = Gate::new(name);
-                                        new_gate.position = gate::GridVec2::from_pos2(pan_center);
-                                        self.live_data.push(new_gate);
-                                        self.dragging_id = None; // Reset dragging state
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     // draw logic here using `pan_center`
-                    for gate in &self.live_data {
+                    for mut gate in self.live_data.clone() {
                         // Get gate world position
                         let world_pos = &gate.position;
 
@@ -307,12 +306,11 @@ impl eframe::App for MyApp {
 
                         // Place the widget at the screen position
                         let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
-                        let widget = Gate::generate(gate.label.clone(), gate.n_in, gate.n_out);
                         let builder = UiBuilder::new()
                             .max_rect(rect)
                             .sense(egui::Sense::click_and_drag());
                         ui.scope_builder(builder, |ui| {
-                            ui.add(widget);
+                            ui.add(&mut gate);
                         });
                     }
 

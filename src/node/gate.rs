@@ -1,7 +1,8 @@
 
 use super::*;
+use eframe::EventLoopBuilderHook;
 use egui::{epaint::RectShape, Vec2, Ui};
-use egui::{Color32, Id, Pos2, Rect, Stroke, StrokeKind};
+use egui::{Button, Color32, Id, Pos2, Rect, Stroke, StrokeKind, UiBuilder};
 
 use std::hash::Hash;
 
@@ -60,29 +61,46 @@ impl Hash for GridVec2 {
 }
 
 
-impl Widget for Gate {
+impl Widget for &mut Gate {
     fn ui(self, ui: &mut Ui) -> Response {
-        let mut response = ui.allocate_response(ui.available_size(), Sense::click_and_drag());
+        let size = Vec2::new(150.0, 110.0);
+        let (rect, mut response) = ui.allocate_exact_size(size, Sense::click_and_drag());
 
-        if response.clicked() {
-            response.mark_changed();
+        // Draw the outer button background
+        let button_fill = Color32::from_rgb(30, 30, 30);
+        ui.painter().rect(rect, 10.0, button_fill, egui::Stroke::new(3., Color32::DARK_RED), StrokeKind::Inside);
 
-        let rect = Rect::from_min_size(ui.min_rect().min, Vec2::new(150., 110.));
+        let mut child_ui = ui.new_child(UiBuilder::new().layout(egui::Layout::left_to_right(egui::Align::Center)).max_rect(rect));
 
-        let rs: RectShape = RectShape::new(
-            rect,
-            10.0,
-            Color32::from_rgb(200, 200, 200),
-            Stroke::new(1.0, Color32::BLACK),
-            StrokeKind::Outside,
-        );
+        // Left: n_in checkboxes
+        child_ui.vertical_centered(|ui| {
+            for n in 0..self.n_in {
+                ui.add(egui::Checkbox::without_text(&mut self.ins[n].signal));
+            }
+        });
 
-        ui.painter().add(rs);
+        // Center: rotated label
+        child_ui.vertical_centered(|ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(self.label.clone())
+                        .size(16.0)
+                        .color(Color32::WHITE),
+                );
+            });
+        });
 
-    }
+        // Right: n_out checkboxes
+        child_ui.vertical_centered(|ui| {
+            for n in 0..self.n_out {
+                ui.add(egui::Checkbox::without_text(&mut self.outs[n].signal));
+            }
+        });
+
         response
     }
 }
+
 
 impl Gate {
     pub fn new(name: String) -> Gate {
@@ -110,25 +128,36 @@ impl Gate {
         self.outs.iter().map(|o| o.signal).collect()
     }
 
-    pub fn from_template_id(t: &Id, pos: Pos2) -> Gate {
-        print!("Creating gate from template ID: {:?}", t);
-        match t {
-            Id::new("Button") => Self::from_template(t, pos, 0, 1),
-            Id::new("Light") => Self::from_template(t, pos, 1, 0),
-            _ => Self::from_template(t, pos, 0, 0), // Default case
-        }
-
+    pub fn from_template(t: &Primitive, pos: Pos2) -> Gate {
         Gate {
             label: t.label.clone(),
             position: GridVec2::new(pos.x, pos.y),
             size: GridVec2::new(150.0, 110.0),
 
-            n_in: n_ins,
-            ins: Self::create_inputs(n_ins),
-            n_out: n_outs,
-            outs: Self::create_outputs(n_outs),
+            n_in: t.n_ins as usize,
+            ins: Self::create_inputs(t.n_ins as usize),
+            n_out: t.n_outs as usize,
+            outs: Self::create_outputs(t.n_outs as usize),
+
             kind: t.kind.clone(),
         }
+    }
+
+    pub fn from_template_id(t: String, pos: Pos2) -> Gate {
+        print!("Creating gate from template ID: {:?}", t);
+        let new_gate= match GateType::lookup_kind(&t) {
+            GateType::Primitive(PrimitiveKind::BUTTON) => {
+                Gate::from_template(&Primitive::from_values("BUTTON", 0, 1), pos)
+            }
+            GateType::Primitive(PrimitiveKind::LIGHT) => {
+                Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
+            }
+            _ => {
+                Gate::new(t.to_string())
+            }
+        };
+        println!("Created gate: {:?}", new_gate);
+        new_gate
     }
 
     fn create_inputs(n_in: usize) -> Vec<Input> {
@@ -163,10 +192,10 @@ impl Gate {
         let kind: GateType;
         match label.as_str() {
             "Button" => {
-                kind = GateType::Primitive(PrimitiveKind::Button);
+                kind = GateType::Primitive(PrimitiveKind::BUTTON);
             }
             "Light" => {
-                kind = GateType::Primitive(PrimitiveKind::Light);
+                kind = GateType::Primitive(PrimitiveKind::LIGHT);
             }
             _ => {
                 kind = GateType::Primitive(PrimitiveKind::None);
