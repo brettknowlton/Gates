@@ -4,7 +4,7 @@ use eframe::{
     glow::{LEFT, RIGHT},
     *,
 };
-use egui::{CursorIcon, Id, Pos2, UiBuilder, epaint::tessellator::Path};
+use egui::{Pos2, Rect, UiBuilder};
 use egui_dnd::{DragDropResponse, dnd};
 use log::Log;
 use serde;
@@ -14,6 +14,27 @@ use super::node::*;
 
 mod pan_area;
 use pan_area::PanArea;
+
+const TITLE_BAR_HEIGHT: f32 = 30.0;
+const TITLE_BAR_AREA: Rect = Rect {
+    min: Pos2::new(0.0, 0.0),
+    max: Pos2::new(1000.0, TITLE_BAR_HEIGHT),
+};
+
+const SIDE_PANEL_WIDTH: f32 = 400.0;
+const SIDE_PANEL_AREA: Rect = Rect {
+    min: Pos2::new(0.0, 0.),
+    max: Pos2::new(SIDE_PANEL_WIDTH, 1000.0),
+};
+const TOOLBOX_HEIGHT: f32 = 150.0;
+const TOOLBOX_AREA: Rect = Rect {
+    min: Pos2::new(SIDE_PANEL_WIDTH, TITLE_BAR_HEIGHT),
+    max: Pos2::new(1000., TITLE_BAR_HEIGHT + TOOLBOX_HEIGHT),
+};
+const PAN_AREA: Rect = Rect {
+    min: Pos2::new(SIDE_PANEL_WIDTH, TITLE_BAR_HEIGHT + TOOLBOX_HEIGHT),
+    max: Pos2::new(1000.0, 1000.0),
+};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -32,6 +53,7 @@ pub struct MyApp {
     live_data: Vec<Gate>,
 
     pan_center: Pos2,
+    pan_area_rect: Option<egui::Rect>,
     dragging_kind: Option<GateType>,
 }
 
@@ -50,6 +72,7 @@ impl Default for MyApp {
             live_data: Vec::<Gate>::new(),
 
             pan_center: Pos2::new(0.0, 0.0),
+            pan_area_rect: None,
             dragging_kind: None,
         }
     }
@@ -58,14 +81,27 @@ impl Default for MyApp {
 impl MyApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let new: Self;
         if let Some(storage) = cc.storage {
-            Default::default()
+            new = Default::default();
             // eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
-            Default::default()
+            new = Default::default();
         }
+
+        new.gates_setup()
     }
 
+    fn gates_setup(mut self) -> Self {
+        self.saved = Self::load_chips();
+        println!("Loaded chips: {}", self.saved.len());
+
+        self.prims = Self::load_prims();
+        println!("Loaded prims: {}", self.prims.len());
+
+        self.files_loaded = true;
+        self
+    }
     pub fn load_chips() -> Vec<Primitive> {
         let mut gates = Vec::<Primitive>::new();
 
@@ -177,17 +213,9 @@ impl eframe::App for MyApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        if !self.files_loaded {
-            self.saved = Self::load_chips();
-            println!("Loaded chips: {}", self.saved.len());
-
-            self.prims = Self::load_prims();
-            println!("Loaded prims: {}", self.prims.len());
-
-            self.files_loaded = true
-        }
+        if !self.files_loaded {}
         egui::SidePanel::left("Tools").show(ctx, |ui| {
-            ui.set_min_width(400.);
+            ui.set_min_width(SIDE_PANEL_WIDTH);
             ui.vertical_centered_justified(|ui| {
                 //display title "Saved Gates" 3/4 the width of the panel, bold, and centered
                 ui.heading("Saved Chips");
@@ -229,6 +257,8 @@ impl eframe::App for MyApp {
 
         egui::TopBottomPanel::top("top_panel_bar").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
+            ui.set_min_height(TITLE_BAR_HEIGHT);
+            ui.set_max_height(TITLE_BAR_HEIGHT);
 
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -259,28 +289,46 @@ impl eframe::App for MyApp {
                             if w.is_pointer_button_down_on() {
                                 self.dragging_kind = Some(item.kind.clone());
                                 println!("Dragging kind: {:?}", self.dragging_kind);
-                            } else if w.drag_stopped_by(egui::PointerButton::Primary) {
+                            } 
+                            // else if w.drag_stopped_by(egui::PointerButton::Primary) {
+                            //     if let Some(kind) = &self.dragging_kind {
+                            //         // Check if pointer is over the PanArea
+                            //         if let Some(pointer_pos) = ctx.pointer_hover_pos() {
+                            //             if PAN_AREA.contains(pointer_pos) {
+                            //                 println!("Pointer is over PanArea, adding gate");
+                            //                 let world_pos = pointer_pos + self.pan_center.to_vec2();
+                            //                 let new_gate =
+                            //                     Gate::from_template_id(kind.clone(), world_pos);
+
+                            //                 self.live_data.push(new_gate);
+                            //                 println!("Added new gate: {:?}", self.dragging_kind);
+                            //                 println!("Mouse position: {:?}", pointer_pos);
+                            //                 println!("World position: {:?}", world_pos);
+                            //                 println!("Pan center: {:?}", self.pan_center);
+                            //             }
+                            //         }
+                            //     }
+                            //     self.dragging_kind = None;
+                            // } 
+                            else if ui.input(|i| i.pointer.any_released()) {
                                 if let Some(kind) = &self.dragging_kind {
-                                    let pos = ctx.pointer_hover_pos().unwrap_or(self.pan_center);
+                                    // Check if pointer is over the PanArea
+                                    if let Some(pointer_pos) = ctx.pointer_hover_pos() {
+                                        if let Some(pan_area_rect) = self.pan_area_rect {
+                                            if pan_area_rect.contains(pointer_pos) {
+                                                println!("Pointer is over PanArea, adding gate");
+                                                let world_pos = pointer_pos + self.pan_center.to_vec2();
+                                                let new_gate =
+                                                    Gate::from_template_id(kind.clone(), world_pos);
 
-                                    let new_gate = Gate::from_template_id(kind.to_string(), pos);
-
-                                    self.live_data.push(new_gate);
-                                    println!("Added new gate: {:?}", self.dragging_kind);
-
-                                    self.dragging_kind = None;
-                                }
-                                self.dragging_kind = None;
-                            } else if ui.input(|i| i.pointer.any_released()) {
-                                 if let Some(kind) = &self.dragging_kind {
-                                    let pos = ctx.pointer_hover_pos().unwrap_or(self.pan_center);
-
-                                    let new_gate = Gate::from_template_id(kind.to_string(), pos);
-
-                                    self.live_data.push(new_gate);
-                                    println!("Added new gate: {:?}", self.dragging_kind);
-
-                                    self.dragging_kind = None;
+                                                self.live_data.push(new_gate);
+                                                println!("Added new gate: {:?}", self.dragging_kind);
+                                                println!("Mouse position: {:?}", pointer_pos);
+                                                println!("World position: {:?}", world_pos);
+                                                println!("Pan center: {:?}", self.pan_center);
+                                            }
+                                        }
+                                    }
                                 }
                                 self.dragging_kind = None;
                             }
@@ -291,31 +339,32 @@ impl eframe::App for MyApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut new_pan_center = self.pan_center; // copy the value (Pos2 is Copy)
-            //if drag released in this panel, add the gate to the live data if it was a primitive
+
+            // Update pan_area_rect each frame so dragndrop items stay functional
+            let available_rect = ui.available_rect_before_wrap();
+            self.pan_area_rect = Some(available_rect);
 
             ui.add(PanArea::new(
-                &mut new_pan_center,
-                |ui: &mut egui::Ui, pan_center: Pos2| {
-                    // draw logic here using `pan_center`
-                    for mut gate in self.live_data.clone() {
-                        // Get gate world position
-                        let world_pos = &gate.position;
+            &mut new_pan_center,
+            |ui: &mut egui::Ui, pan_center: Pos2| {
+                // draw logic here using `pan_center`
+                for gate in &mut self.live_data {
+                // Get gate world position
+                let world_pos = &gate.position;
 
-                        // Convert to screen-local position
-                        let screen_pos = world_pos.to_pos2() - pan_center.to_vec2();
+                // Convert to screen-local position
+                let screen_pos = world_pos.to_pos2() - pan_center.to_vec2();
 
-                        // Place the widget at the screen position
-                        let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
-                        let builder = UiBuilder::new()
-                            .max_rect(rect)
-                            .sense(egui::Sense::click_and_drag());
-                        ui.scope_builder(builder, |ui| {
-                            ui.add(&mut gate);
-                        });
-                    }
+                // Place the widget at the screen position
+                let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
+                let builder = UiBuilder::new().max_rect(rect);
+                ui.scope_builder(builder, |ui| {
+                    ui.add(gate);
+                });
+                }
 
-                    self.pan_center = pan_center; // update AFTER the widget runs
-                },
+                self.pan_center = pan_center; // update AFTER the widget runs
+            },
             ));
         });
     }

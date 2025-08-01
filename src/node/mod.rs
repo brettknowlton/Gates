@@ -21,6 +21,7 @@ pub enum GateType {
     Primitive(PrimitiveKind),
     Custom,
 }
+
 impl Display for GateType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -47,14 +48,23 @@ pub enum PrimitiveKind {
     None,
     BUTTON,
     LIGHT,
+    BUFFER,
+    NOT,
+    OR,
+    AND,
 }
 
 impl Display for PrimitiveKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PrimitiveKind::None => write!(f, "None"),
-            PrimitiveKind::BUTTON => write!(f, "Button"),
-            PrimitiveKind::LIGHT=> write!(f, "Light"),
+            PrimitiveKind::BUTTON => write!(f, "BUTTON"),
+            PrimitiveKind::LIGHT=> write!(f, "LIGHT"),
+            PrimitiveKind::BUFFER => write!(f, "BUFFER"),
+            PrimitiveKind::NOT => write!(f, "NOT"),
+            PrimitiveKind::OR => write!(f, "OR"),
+            PrimitiveKind::AND => write!(f, "AND"),
+
         }
     }
 }
@@ -93,6 +103,18 @@ impl Primitive {
             }
             "LIGHT" => {
                 kind = GateType::Primitive(PrimitiveKind::LIGHT);
+            }
+            "BUFFER" => {
+                kind = GateType::Primitive(PrimitiveKind::BUFFER);
+            }
+            "NOT" => {
+                kind = GateType::Primitive(PrimitiveKind::NOT);
+            }
+            "OR" => {
+                kind = GateType::Primitive(PrimitiveKind::OR);
+            }
+            "AND" => {
+                kind = GateType::Primitive(PrimitiveKind::AND);
             }
             _ => {
                 kind = GateType::Primitive(PrimitiveKind::None);
