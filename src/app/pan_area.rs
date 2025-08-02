@@ -1,10 +1,11 @@
-use egui::{pos2, vec2, Pos2, Rect, Response, Sense, StrokeKind, Ui, UiBuilder, Vec2};
+use egui::{Pos2, Rect, Response, Sense, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2};
 
 /// A pannable area that supports dragging the entire contents by holding space and clicking.
 /// It also draws a dynamic grid of 9 cells that updates as the center moves.
 pub struct PanArea<'a> {
     content: Box<dyn FnOnce(&mut Ui, Pos2) + 'a>,
     center: &'a mut Pos2,
+    drag_blocker: Option<&'a bool>,
 }
 
 impl<'a> PanArea<'a> {
@@ -15,10 +16,21 @@ impl<'a> PanArea<'a> {
         Self {
             content: Box::new(content),
             center,
+            drag_blocker: None,
+        }
+    }
+
+    pub fn with_drag_blocker<F>(center: &'a mut Pos2, drag_blocker: &'a bool, content: F) -> Self
+    where
+        F: FnOnce(&mut Ui, Pos2) + 'a,
+    {
+        Self {
+            content: Box::new(content),
+            center,
+            drag_blocker: Some(drag_blocker),
         }
     }
 }
-
 
 impl<'a> egui::Widget for PanArea<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
@@ -29,7 +41,10 @@ impl<'a> egui::Widget for PanArea<'a> {
         let mut pan_delta = Vec2::ZERO;
 
         ui.input(|i| {
-            if i.key_down(egui::Key::Space) && i.pointer.primary_down() {
+            if i.key_down(egui::Key::Space)
+                && i.pointer.primary_down()
+                && self.drag_blocker.map_or(true, |blocker| !*blocker)
+            {
                 if let Some(delta) = Some(i.pointer.delta()) {
                     pan_delta = delta;
                 }

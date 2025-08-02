@@ -1,16 +1,18 @@
-
 pub mod gate;
+use super::*;
+pub use gate::Gate;
+use serde;
+use std::hash::Hash;
 use std::{default, fmt::Display};
 
-pub use gate::Gate;
-use super::*;
-
 use egui::{
-    Label, Response, SelectableLabel, Sense, Ui, Widget, text_selection::LabelSelectionState,
+    Button, Color32, Direction, Label, Layout, Pos2, Rect, Response, SelectableLabel, Sense, Ui,
+    Vec2, Widget, text_selection::LabelSelectionState,
 };
 
-trait Logical {
+const LINE_THICKNESS: f32 = 2.0;
 
+pub trait Logical {
     fn tick(self);
 }
 
@@ -35,9 +37,25 @@ impl Display for GateType {
 impl GateType {
     pub fn lookup_kind(name: &str) -> GateType {
         match name {
-            "Button" => GateType::Primitive(PrimitiveKind::BUTTON),
-            "Light" => GateType::Primitive(PrimitiveKind::LIGHT),
+            "TOGGLE" => GateType::Primitive(PrimitiveKind::TOGGLE),
+            "LIGHT" => GateType::Primitive(PrimitiveKind::LIGHT),
+            "BUFFER" => GateType::Primitive(PrimitiveKind::BUFFER),
+            "NOT" => GateType::Primitive(PrimitiveKind::NOT),
+            "OR" => GateType::Primitive(PrimitiveKind::OR),
+            "AND" => GateType::Primitive(PrimitiveKind::AND),
             _ => GateType::None,
+        }
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        matches!(self, GateType::Primitive(_))
+    }
+
+    pub fn primitive_kind(&self) -> Option<PrimitiveKind> {
+        if let GateType::Primitive(kind) = self {
+            Some(kind.clone())
+        } else {
+            None
         }
     }
 }
@@ -46,7 +64,7 @@ impl GateType {
 pub enum PrimitiveKind {
     #[default]
     None,
-    BUTTON,
+    TOGGLE,
     LIGHT,
     BUFFER,
     NOT,
@@ -58,14 +76,27 @@ impl Display for PrimitiveKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PrimitiveKind::None => write!(f, "None"),
-            PrimitiveKind::BUTTON => write!(f, "BUTTON"),
-            PrimitiveKind::LIGHT=> write!(f, "LIGHT"),
+            PrimitiveKind::TOGGLE => write!(f, "TOGGLE"),
+            PrimitiveKind::LIGHT => write!(f, "LIGHT"),
             PrimitiveKind::BUFFER => write!(f, "BUFFER"),
             PrimitiveKind::NOT => write!(f, "NOT"),
             PrimitiveKind::OR => write!(f, "OR"),
             PrimitiveKind::AND => write!(f, "AND"),
-
         }
+    }
+}
+
+impl Widget for PrimitiveKind {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let r = ui.add_enabled_ui(false, |ui| {
+            ui.with_layout(Layout::centered_and_justified(Direction::TopDown), |ui| {
+                let fill_color = {
+                    Color32::from_rgb(50, 50, 50) // Default color for the gate
+                };
+                ui.label(self.to_string());
+            });
+        });
+        r.response
     }
 }
 
@@ -79,18 +110,6 @@ pub struct Primitive {
 }
 
 impl Primitive {
-    pub fn new(n: String) -> Primitive {
-
-        let k= GateType::lookup_kind(&n);
-
-        Primitive {
-            label: n,
-            n_ins: 0,
-            n_outs: 0,
-            kind: k,
-        }
-    }
-
     pub fn kind_as_str(self) -> String {
         self.kind.to_string().clone()
     }
@@ -98,8 +117,8 @@ impl Primitive {
     pub fn from_values(label: &str, num_inputs: usize, num_outputs: usize) -> Primitive {
         let kind: GateType;
         match label {
-            "BUTTON" => {
-                kind = GateType::Primitive(PrimitiveKind::BUTTON);
+            "TOGGLE" => {
+                kind = GateType::Primitive(PrimitiveKind::TOGGLE);
             }
             "LIGHT" => {
                 kind = GateType::Primitive(PrimitiveKind::LIGHT);
@@ -129,7 +148,7 @@ impl Primitive {
         var
     }
 
-    pub fn make_prim_widget(&self) -> egui::Button<'static> {
+    pub fn make_toolbox_widget(&self) -> egui::Button<'static> {
         //square selectable button that takes a label and number of inputs and outputs
         let var = egui::Button::selectable(
             false, // or set to true if you want it selected by default
@@ -144,7 +163,7 @@ impl Primitive {
 }
 
 impl Widget for Primitive {
-    fn ui(self, ui: &mut Ui) -> Response {
+    fn ui(self, _ui: &mut Ui) -> Response {
         todo!()
     }
 }
@@ -152,14 +171,16 @@ impl Widget for Primitive {
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)]
 pub struct Input {
+    pub id: usize,
     pub name: Option<String>,
     pub signal: bool,
     pub connected: bool,
 }
 
 impl Input {
-    pub fn new() -> Self {
+    pub fn new(n: usize) -> Self {
         Input {
+            id: n,
             name: None,
             signal: false,
             connected: false,
@@ -170,20 +191,57 @@ impl Input {
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Output {
+    pub id: usize,
     pub name: Option<String>,
+
     pub connected: bool,
     pub signal: bool,
-    pub dests: Vec<Wire>,
+    pub wires: Vec<Wire>,
 }
 
 impl Output {
-    pub fn new() -> Self {
+    pub fn new(n: usize) -> Self {
         Output {
+            id: n,
             name: None,
             signal: false,
-            dests: Vec::new(),
+            wires: Vec::new(),
             connected: false,
         }
+    }
+
+    fn position(&self) -> Pos2 {
+        // Assuming a fixed position for simplicity, this should be replaced with actual logic
+        Pos2::new(self.id as f32 * 50.0, 0.0)
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
+struct WireLine {
+    p1: Pos2,
+    p2: Pos2,
+    color: Color32,
+    smoothing: bool,
+}
+impl WireLine {
+    pub fn new(p1: Pos2, p2: Pos2, color: Color32, smoothing: bool) -> Self {
+        WireLine {
+            p1,
+            p2,
+            color,
+            smoothing,
+        }
+    }
+}
+
+impl Hash for WireLine {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.p1.x.to_bits().hash(state);
+        self.p1.y.to_bits().hash(state);
+        self.p2.x.to_bits().hash(state);
+        self.p2.y.to_bits().hash(state);
+        self.color.hash(state);
+        self.smoothing.hash(state);
     }
 }
 
@@ -192,15 +250,48 @@ impl Output {
 pub struct Wire {
     signal: bool,
     source: Output,
-    dest: Input,
+    dest: Option<Input>,
+    line: WireLine,
 }
 
 impl Wire {
+    fn new(source: Output, pos2: Pos2, color: Color32, smoothing: bool) -> Self {
+        let pos1 = source.position();
+
+        Wire {
+            signal: false,
+            source,
+            dest: None,
+            line: WireLine::new(pos1, pos2, color, smoothing),
+        }
+    }
+
+    fn delete(mut self) {
+        //disconnect both output and input
+        if let Some(dest) = &mut self.dest {
+            dest.connected = false;
+        }
+        self.source.connected = false;
+        self.signal = false;
+        self.dest = None;
+    }
+
     fn on(mut self) {
         self.signal = true;
     }
 
     fn off(mut self) {
         self.signal = false
+    }
+}
+impl Logical for Wire {
+    fn tick(self) {
+        if let Some(mut out) = self.dest {
+            if self.signal {
+                out.signal = true;
+            } else {
+                out.signal = false;
+            }
+        }
     }
 }
