@@ -2,18 +2,42 @@ pub mod gate;
 use super::*;
 pub use gate::Gate;
 use serde;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
-use std::{default, fmt::Display};
 
-use egui::{
-    Button, Color32, Direction, Label, Layout, Pos2, Rect, Response, SelectableLabel, Sense, Ui,
-    Vec2, Widget, text_selection::LabelSelectionState,
-};
+use std::error::Error;
+
+use egui::{Color32, Direction, Layout, Pos2, Response, Sense, Ui, Widget};
+
+mod output;
+pub use output::Output;
 
 const LINE_THICKNESS: f32 = 2.0;
 
+pub enum Logicals {
+    Gate(GateType),
+    Primitive(PrimitiveKind),
+    Wire,
+}
+
+#[derive(Debug)]
+struct InvalidOperationError;
+impl Error for InvalidOperationError {}
+
+impl Display for InvalidOperationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "Cannot set position for this type")
+    }
+}
+
 pub trait Logical {
     fn tick(self);
+    fn get_position(&self) -> Pos2;
+    fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>>;
+
+    fn get_kind(&self) -> Logicals {
+        Logicals::Gate(GateType::None)
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
@@ -21,6 +45,7 @@ pub enum GateType {
     #[default]
     None,
     Primitive(PrimitiveKind),
+    Wire,
     Custom,
 }
 
@@ -30,6 +55,7 @@ impl Display for GateType {
             GateType::None => write!(f, "None"),
             GateType::Primitive(kind) => write!(f, "{}", kind),
             GateType::Custom => write!(f, "Custom"),
+            GateType::Wire => write!(f, "Wire"),
         }
     }
 }
@@ -90,9 +116,6 @@ impl Widget for PrimitiveKind {
     fn ui(self, ui: &mut Ui) -> Response {
         let r = ui.add_enabled_ui(false, |ui| {
             ui.with_layout(Layout::centered_and_justified(Direction::TopDown), |ui| {
-                let fill_color = {
-                    Color32::from_rgb(50, 50, 50) // Default color for the gate
-                };
                 ui.label(self.to_string());
             });
         });
@@ -173,46 +196,22 @@ impl Widget for Primitive {
 pub struct Input {
     pub id: usize,
     pub name: Option<String>,
+    pub parent: Option<Gate>, // Optional parent gate, if this input belongs to a gate
+
     pub signal: bool,
     pub connected: bool,
 }
 
 impl Input {
-    pub fn new(n: usize) -> Self {
+    pub fn new(n: usize, parent_gate: &Gate) -> Self {
         Input {
             id: n,
             name: None,
+            parent: Some(parent_gate.clone()), // Optional parent gate, if this input belongs to a gate
+
             signal: false,
             connected: false,
         }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct Output {
-    pub id: usize,
-    pub name: Option<String>,
-
-    pub connected: bool,
-    pub signal: bool,
-    pub wires: Vec<Wire>,
-}
-
-impl Output {
-    pub fn new(n: usize) -> Self {
-        Output {
-            id: n,
-            name: None,
-            signal: false,
-            wires: Vec::new(),
-            connected: false,
-        }
-    }
-
-    fn position(&self) -> Pos2 {
-        // Assuming a fixed position for simplicity, this should be replaced with actual logic
-        Pos2::new(self.id as f32 * 50.0, 0.0)
     }
 }
 
@@ -256,7 +255,7 @@ pub struct Wire {
 
 impl Wire {
     fn new(source: Output, pos2: Pos2, color: Color32, smoothing: bool) -> Self {
-        let pos1 = source.position();
+        let pos1 = source.get_position();
 
         Wire {
             signal: false,
@@ -276,6 +275,10 @@ impl Wire {
         self.dest = None;
     }
 
+    fn get_kind(&self) -> Logicals {
+        Logicals::Wire
+    }
+
     fn on(mut self) {
         self.signal = true;
     }
@@ -284,6 +287,7 @@ impl Wire {
         self.signal = false
     }
 }
+
 impl Logical for Wire {
     fn tick(self) {
         if let Some(mut out) = self.dest {
@@ -293,5 +297,12 @@ impl Logical for Wire {
                 out.signal = false;
             }
         }
+    }
+    fn get_position(&self) -> Pos2 {
+        self.line.p1
+    }
+
+    fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>> {
+        Err(Box::new(InvalidOperationError))
     }
 }

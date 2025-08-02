@@ -1,7 +1,6 @@
 use super::node::Logical;
 
-use std::{path::PathBuf};
-
+use std::path::PathBuf;
 
 use eframe::{self, *};
 use egui::{Pos2, Rect, UiBuilder};
@@ -10,6 +9,7 @@ use log::warn;
 use serde;
 
 use crate::gate::GridVec2;
+use crate::gate::OutputClick;
 
 use super::Gate;
 use super::node::*;
@@ -38,9 +38,6 @@ const PAN_AREA: Rect = Rect {
     max: Pos2::new(1000.0, 1000.0),
 };
 
-
-
-
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct MyApp {
@@ -57,12 +54,15 @@ pub struct MyApp {
     current_chip: Option<PathBuf>,
 
     #[serde(skip)]
-    live_data: Vec<Box<dyn Logical>>,
+    live_data: Vec<Gate>, // (GateType, position, id)
 
     pan_center: Pos2,
     pan_area_rect: Option<egui::Rect>,
     dragging_kind: Option<GateType>,
     pub dragging_gate: Option<usize>,
+
+    #[serde(skip)]
+    pub on_output_click: Option<OutputClick>,
 }
 
 impl Default for MyApp {
@@ -77,12 +77,14 @@ impl Default for MyApp {
             saved: Vec::new(),
 
             current_chip: None,
-            live_data: Vec::<Box<dyn Logical>>::new(),
+            live_data: Vec::<Gate>::new(),
 
             pan_center: Pos2::new(0.0, 0.0),
             pan_area_rect: None,
             dragging_kind: None,
             dragging_gate: None,
+
+            on_output_click: None,
         }
     }
 }
@@ -298,28 +300,7 @@ impl eframe::App for MyApp {
                             if w.is_pointer_button_down_on() {
                                 self.dragging_kind = Some(item.kind.clone());
                                 println!("Dragging kind: {:?}", self.dragging_kind);
-                            }
-                            // else if w.drag_stopped_by(egui::PointerButton::Primary) {
-                            //     if let Some(kind) = &self.dragging_kind {
-                            //         // Check if pointer is over the PanArea
-                            //         if let Some(pointer_pos) = ctx.pointer_hover_pos() {
-                            //             if PAN_AREA.contains(pointer_pos) {
-                            //                 println!("Pointer is over PanArea, adding gate");
-                            //                 let world_pos = pointer_pos + self.pan_center.to_vec2();
-                            //                 let new_gate =
-                            //                     Gate::from_template_id(kind.clone(), world_pos);
-
-                            //                 self.live_data.push(new_gate);
-                            //                 println!("Added new gate: {:?}", self.dragging_kind);
-                            //                 println!("Mouse position: {:?}", pointer_pos);
-                            //                 println!("World position: {:?}", world_pos);
-                            //                 println!("Pan center: {:?}", self.pan_center);
-                            //             }
-                            //         }
-                            //     }
-                            //     self.dragging_kind = None;
-                            // }
-                            else if ui.input(|i| i.pointer.any_released()) {
+                            } else if ui.input(|i| i.pointer.any_released()) {
                                 if let Some(kind) = &self.dragging_kind {
                                     // Check if pointer is over the PanArea
                                     if let Some(pointer_pos) = ctx.pointer_hover_pos() {
@@ -328,10 +309,13 @@ impl eframe::App for MyApp {
                                                 println!("Pointer is over PanArea, adding gate");
                                                 let world_pos =
                                                     pointer_pos + self.pan_center.to_vec2();
-                                                let new_gate =
-                                                    Gate::from_template_id(kind.clone(), world_pos);
-
-                                                self.live_data.push(new_gate);
+                                                self.live_data.push(
+                                                    Gate::create_gate_from_template(
+                                                        kind.clone(),
+                                                        world_pos,
+                                                        None,
+                                                    ),
+                                                );
                                                 println!(
                                                     "Added new gate: {:?}",
                                                     self.dragging_kind
@@ -364,10 +348,10 @@ impl eframe::App for MyApp {
                     // draw logic here using `pan_center`
                     for (i, gate) in &mut self.live_data.iter_mut().enumerate() {
                         // Get gate world position
-                        let world_pos = &gate.position;
+                        let world_pos = gate.get_position();
 
                         // Convert to screen-local position
-                        let screen_pos = world_pos.to_pos2() - pan_center.to_vec2();
+                        let screen_pos = world_pos - pan_center.to_vec2();
 
                         //offset by halfsize of the widget
                         let half_size = egui::vec2(50.0, 30.0);
@@ -376,33 +360,53 @@ impl eframe::App for MyApp {
                         // Place the widget at the screen position
                         let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
                         let builder = UiBuilder::new().max_rect(rect);
-                        ui.scope_builder(builder, |ui| {
-                            let response = ui.add(&mut *gate);
-                            if response.drag_started()
-                                && ui.input(|i| !i.key_down(egui::Key::Space))
-                            {
-                                self.dragging_gate = Some(i);
-                            }
 
-                            if let Some(index) = self.dragging_gate {
-                                if index == i && response.dragged() {
-                                    if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
-                                        gate.position = GridVec2::from(
-                                            pointer_pos + pan_center.to_vec2() - half_size,
-                                        );
+                        let kind = gate.get_kind();
+
+                        let response= match kind {
+                            Logicals::Primitive(_) => {
+                                ui.scope_builder(builder, |ui| {
+                                    let response = ui.add(gate.show(ui, &mut self.on_output_click));
+                                    if response.drag_started()
+                                        && ui.input(|i| !i.key_down(egui::Key::Space))
+                                    {
+                                        self.dragging_gate = Some(i);
                                     }
-                                }
 
-                                if response.drag_stopped() {
-                                    self.dragging_gate = None;
-                                }
+                                    if let Some(index) = self.dragging_gate {
+                                        if index == i && response.dragged() {
+                                            if let Some(pointer_pos) = ui.ctx().pointer_hover_pos()
+                                            {
+                                                let _ = gate.set_position(
+                                                    pointer_pos - pan_center.to_vec2(),
+                                                );
+                                                println!(
+                                                    "Dragging gate: {:?} to position: {:?}",
+                                                    index, gate.get_position()
+                                                );
+                                            }
+                                        }
+
+                                        if response.drag_stopped() {
+                                            self.dragging_gate = None;
+                                        }
+                                    }
+                                })
+                                .response
                             }
-                        })
-                        .response;
+                            Logicals::Wire => {
+                                // Draw the wire
+                        // wire.ui(ui);
+                                ui.label("Wire placeholder") // Placeholder for wire drawing
+                            }
+                            Logicals::Gate(_) => {
+                                // Draw the custom gate
+                                ui.label("Custom gate placeholder") // Placeholder for custom gate drawing
+                            }
+                        };
+
                     }
                     self.pan_center = pan_center; // update AFTER the widget runs
-
-                    for (i, gate) in self.live_data.iter_mut().enumerate() {}
                 },
             ));
         });
