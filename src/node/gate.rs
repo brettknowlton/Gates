@@ -1,8 +1,5 @@
 use super::*;
-use eframe::glow::FILL;
-use egui::{
-    Align, Align2, Button, Checkbox, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2, vec2,
-};
+use egui::{Align, Align2, Button, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2, vec2};
 use egui::{Color32, Pos2, StrokeKind, UiBuilder};
 
 use super::Output;
@@ -41,6 +38,143 @@ impl Logical for Gate {
         Ok(())
     }
 
+    fn show(&mut self, ui: &mut Ui, on_output_click: &mut Option<OutputClick>) -> Response {
+        let size = Vec2::new(150.0, 110.0);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
+
+        // Draw the bounding box
+        ui.painter().rect(
+            rect,
+            10.0,
+            Color32::from_rgb(30, 30, 30),
+            Stroke::new(1.0, Color32::GRAY),
+            StrokeKind::Middle,
+        );
+
+        // Layout for the gate's three sections
+        let left_rect =
+            Rect::from_min_max(rect.left_top(), pos2(rect.left() + 40.0, rect.bottom()));
+        let center_rect = Rect::from_min_max(
+            pos2(rect.left() + 40.0, rect.top()),
+            pos2(rect.right() - 40.0, rect.bottom()),
+        );
+        let right_rect =
+            Rect::from_min_max(pos2(rect.right() - 40.0, rect.top()), rect.right_bottom());
+
+        // LEFT SIDE - Input indicators
+        ui.scope_builder(
+            UiBuilder::new()
+                .layout(Layout::top_down(Align::LEFT))
+                .max_rect(left_rect),
+            |ui| {
+                let checkbox_height = ui.spacing().interact_size.y;
+                let total_height = self.n_in as f32 * checkbox_height;
+                let parent_height = left_rect.height();
+                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
+
+                ui.add_space(top_padding);
+                ui.vertical(|ui| {
+                    for input in &self.ins {
+                        ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                            let button_color = if input.signal {
+                                Color32::GREEN
+                            } else {
+                                Color32::DARK_RED
+                            };
+
+                            let btn = Button::new(" ")
+                                .fill(button_color)
+                                .min_size(vec2(18.0, 18.0));
+
+                            if ui.add(btn).clicked() {
+                                // Create a new wire with points at this output and the pointer location, push it to the live_data vector
+                                println!("Input Clicked: {}", input.id);
+                            }
+                        });
+                    }
+                });
+            },
+        );
+
+        // CENTER - Label only
+        ui.painter()
+            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
+        ui.painter().text(
+            center_rect.center(),
+            Align2::CENTER_CENTER,
+            self.label.clone(),
+            TextStyle::Button.resolve(ui.style()),
+            Color32::WHITE,
+        );
+
+        // RIGHT SIDE - Output buttons for wire creation
+        ui.scope_builder(
+            UiBuilder::new()
+                .layout(Layout::top_down(Align::RIGHT))
+                .max_rect(right_rect),
+            |ui| {
+                let checkbox_height = ui.spacing().interact_size.y;
+                let total_height = self.outs.len() as f32 * checkbox_height;
+                let parent_height = right_rect.height();
+                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
+
+                ui.add_space(top_padding);
+
+                ui.vertical(move |ui| {
+                    let mut toggles = Vec::new();
+
+                    for output in self.outs.clone() {
+                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                            let button_color = if output.signal {
+                                Color32::GREEN
+                            } else {
+                                Color32::DARK_RED
+                            };
+
+                            let btn = Button::new(" ")
+                                .fill(button_color)
+                                .min_size(vec2(18.0, 18.0));
+
+                            if ui.add(btn).clicked() {
+                                toggles.push(true);
+                                // Create a new wire with points at this output and the pointer location, push it to the live_data vector
+                                let cursor_pos = ui
+                                    .ctx()
+                                    .input(|i| i.pointer.hover_pos().unwrap_or_default());
+                                // output.connected = true;
+                                println!("Output Clicked: {} at {:?}", output.id, cursor_pos);
+                                *on_output_click = Some(OutputClick {
+                                    gate_index: self.id,
+                                    output_index: output.clone(),
+                                    screen_position: cursor_pos,
+                                });
+                            } else {
+                                toggles.push(false);
+                            }
+                        });
+                    }
+
+                    // Handle toggling outputs
+                    for (index, toggle) in toggles.iter().enumerate() {
+                        if *toggle {
+                            self.outs[index].connected = true;
+                            println!("Connected output: {}", self.outs[index].id);
+                        }
+                    }
+                });
+            },
+        );
+
+        response
+    }
+    
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
@@ -81,145 +215,7 @@ impl Hash for GridVec2 {
     }
 }
 
-impl Widget for &mut Gate {
-    fn ui(self, ui: &mut Ui) -> Response {
-        let size = Vec2::new(150.0, 110.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-
-        // Draw the bounding box
-        ui.painter().rect(
-            rect,
-            10.0,
-            Color32::from_rgb(30, 30, 30),
-            Stroke::new(1.0, Color32::GRAY),
-            StrokeKind::Middle,
-        );
-
-        // Layout for the gate's three sections
-        let left_rect =
-            Rect::from_min_max(rect.left_top(), pos2(rect.left() + 40.0, rect.bottom()));
-        let center_rect = Rect::from_min_max(
-            pos2(rect.left() + 40.0, rect.top()),
-            pos2(rect.right() - 40.0, rect.bottom()),
-        );
-        let right_rect =
-            Rect::from_min_max(pos2(rect.right() - 40.0, rect.top()), rect.right_bottom());
-
-        // LEFT SIDE - Input indicators
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::LEFT))
-                .max_rect(left_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.n_in as f32 * checkbox_height;
-                let parent_height = left_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-                ui.vertical(|ui| {
-                    for input in &self.outs {
-                        ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                            let button_color = if input.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                // Create a new wire with points at this output and the pointer location, push it to the live_data vector
-                                println!("Input Clicked: {}", input.id);
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        // CENTER - Label only
-        ui.painter()
-            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
-        ui.painter().text(
-            center_rect.center(),
-            Align2::CENTER_CENTER,
-            self.label.clone(),
-            TextStyle::Button.resolve(ui.style()),
-            Color32::WHITE,
-        );
-
-        // RIGHT SIDE - Output buttons for wire creation
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::RIGHT))
-                .max_rect(right_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.outs.len() as f32 * checkbox_height;
-                let parent_height = right_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-
-                ui.vertical(|ui| {
-                    for (i, output) in self.outs.iter().enumerate() {
-                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            let button_color = if output.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                let cursor_pos = ui
-                                    .ctx()
-                                    .input(|i| i.pointer.hover_pos().unwrap_or_default());
-                                *on_output_click = Some(OutputClick {
-                                    gate_index: self.id,
-                                    output_index: i,
-                                    screen_position: cursor_pos,
-                                });
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        response
-    }
-}
-
 impl Gate {
-    pub fn new(name: String, id: usize) -> Gate {
-        let n_ins = 0;
-        let n_outs = 0;
-
-        let g = Gate {
-            label: name,
-            id,
-            position: GridVec2::new(0.0, 0.0),
-            size: GridVec2::new(150.0, 110.0),
-
-            n_in: n_ins,
-            ins: Vec::new(),
-            n_out: n_outs,
-            outs: Vec::new(),
-
-            kind: GateType::None,
-        };
-        g.create_inputs(g.n_in);
-        g.create_outputs(g.n_out);
-        g
-    }
-
     pub fn get_signals_in(&self) -> Vec<bool> {
         self.ins.iter().map(|i| i.signal).collect()
     }
@@ -228,7 +224,7 @@ impl Gate {
     }
 
     fn from_template(t: &Primitive, pos: Pos2, id: usize) -> Gate {
-        let g = Gate {
+        let mut g = Gate {
             label: t.label.clone(),
             id,
             position: GridVec2::new(pos.x, pos.y),
@@ -241,27 +237,28 @@ impl Gate {
 
             kind: t.kind.clone(),
         };
-        g.create_inputs(g.n_in);
-        g.create_outputs(g.n_out);
+        g.ins = g.create_inputs();
+        g.outs = g.create_outputs();
+        println!(
+            "New Gate constructed with i/o: ins:{:?}, outs:{:?}",
+            g.n_in, g.n_out
+        );
         g
     }
 
-    pub fn next_id() -> usize {
-        static mut ID: usize = 0;
-        unsafe {
-            ID += 1;
-            ID
-        }
-    }
-
-    pub fn create_gate_from_template(t: GateType, pos: Pos2, id: Option<usize>) -> Gate {
-        print!("Creating gate from template ID: {:?}", t);
-        let id = id.unwrap_or_else(Gate::next_id);
+    pub fn create_gate_from_template(
+        t: GateType,
+        pos: Pos2,
+        id: Option<usize>,
+    ) -> Box<dyn Logical> {
+        println!("Creating gate from template ID: {:?}", t);
+        let id = id.unwrap_or_else(MyApp::next_id);
         let new_gate = match t {
             GateType::Primitive(PrimitiveKind::TOGGLE) => {
                 Gate::from_template(&Primitive::from_values("TOGGLE", 0, 1), pos, id)
             }
             GateType::Primitive(PrimitiveKind::LIGHT) => {
+                println!("templating a light and it should have 1 input");
                 Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos, id)
             }
             GateType::Primitive(PrimitiveKind::BUFFER) => {
@@ -280,20 +277,20 @@ impl Gate {
         };
 
         println!("Created gate: {:?}", new_gate);
-        new_gate
+        Box::new(new_gate)
     }
 
-    fn create_inputs(&self, n_in: usize) -> Vec<Input> {
+    fn create_inputs(&mut self) -> Vec<Input> {
         let mut new_ins = Vec::<Input>::new();
-        for n in 0..n_in {
+        for n in 0..self.n_in {
             new_ins.push(Input::new(n, self))
         }
         new_ins
     }
 
-    fn create_outputs(&self, n_out: usize) -> Vec<Output> {
+    fn create_outputs(&mut self) -> Vec<Output> {
         let mut new_outs = Vec::<Output>::new();
-        for n in 0..n_out {
+        for n in 0..self.n_out {
             new_outs.push(Output::new(n, self))
         }
         new_outs
@@ -301,7 +298,7 @@ impl Gate {
 
     pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
         let kind: GateType;
-        let id = Gate::next_id();
+        let id = MyApp::next_id();
         match label.as_str() {
             "TOGGLE" => {
                 kind = GateType::Primitive(PrimitiveKind::TOGGLE);
@@ -326,7 +323,7 @@ impl Gate {
             }
         }
 
-        let g = Gate {
+        let mut g = Gate {
             label,
             position: GridVec2::new(0.0, 0.0),
             id: id,
@@ -340,129 +337,15 @@ impl Gate {
             kind,
         };
 
-        g.create_inputs(n_ins);
-        g.create_outputs(n_outs);
+        g.create_inputs();
+        g.create_outputs();
         g
-    }
-
-    pub fn show(&self, ui: &mut Ui, on_output_click: &mut Option<OutputClick>) -> Response {
-        let size = Vec2::new(150.0, 110.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-
-        // Draw the bounding box
-        ui.painter().rect(
-            rect,
-            10.0,
-            Color32::from_rgb(30, 30, 30),
-            Stroke::new(1.0, Color32::GRAY),
-            StrokeKind::Middle,
-        );
-
-        // Layout for the gate's three sections
-        let left_rect =
-            Rect::from_min_max(rect.left_top(), pos2(rect.left() + 40.0, rect.bottom()));
-        let center_rect = Rect::from_min_max(
-            pos2(rect.left() + 40.0, rect.top()),
-            pos2(rect.right() - 40.0, rect.bottom()),
-        );
-        let right_rect =
-            Rect::from_min_max(pos2(rect.right() - 40.0, rect.top()), rect.right_bottom());
-
-        // LEFT SIDE - Input indicators
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::LEFT))
-                .max_rect(left_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.n_in as f32 * checkbox_height;
-                let parent_height = left_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-                ui.vertical(|ui| {
-                    for input in &self.outs {
-                        ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                            let button_color = if input.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                // Create a new wire with points at this output and the pointer location, push it to the live_data vector
-                                println!("Input Clicked: {}", input.id);
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        // CENTER - Label only
-        ui.painter()
-            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
-        ui.painter().text(
-            center_rect.center(),
-            Align2::CENTER_CENTER,
-            self.label.clone(),
-            TextStyle::Button.resolve(ui.style()),
-            Color32::WHITE,
-        );
-
-        // RIGHT SIDE - Output buttons for wire creation
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::RIGHT))
-                .max_rect(right_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.outs.len() as f32 * checkbox_height;
-                let parent_height = right_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-
-                ui.vertical(|ui| {
-                    for (i, output) in self.outs.iter().enumerate() {
-                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            let button_color = if output.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                let cursor_pos = ui
-                                    .ctx()
-                                    .input(|i| i.pointer.hover_pos().unwrap_or_default());
-                                *on_output_click = Some(OutputClick {
-                                    gate_index: self.id,
-                                    output_index: i,
-                                    screen_position: cursor_pos,
-                                });
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        response
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct OutputClick {
     pub gate_index: usize,
-    pub output_index: usize,
+    pub output_index: Output,
     pub screen_position: egui::Pos2,
 }

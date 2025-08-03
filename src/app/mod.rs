@@ -3,12 +3,11 @@ use super::node::Logical;
 use std::path::PathBuf;
 
 use eframe::{self, *};
+use egui::Color32;
 use egui::{Pos2, Rect, UiBuilder};
 use egui_dnd::dnd;
-use log::warn;
 use serde;
 
-use crate::gate::GridVec2;
 use crate::gate::OutputClick;
 
 use super::Gate;
@@ -54,7 +53,7 @@ pub struct MyApp {
     current_chip: Option<PathBuf>,
 
     #[serde(skip)]
-    live_data: Vec<Gate>, // (GateType, position, id)
+    live_data: Vec<Box<dyn Logical>>, // (GateType, position, id)
 
     pan_center: Pos2,
     pan_area_rect: Option<egui::Rect>,
@@ -63,6 +62,7 @@ pub struct MyApp {
 
     #[serde(skip)]
     pub on_output_click: Option<OutputClick>,
+    pub holding_wire: bool,
 }
 
 impl Default for MyApp {
@@ -77,7 +77,7 @@ impl Default for MyApp {
             saved: Vec::new(),
 
             current_chip: None,
-            live_data: Vec::<Gate>::new(),
+            live_data: Vec::<Box<dyn Logical>>::new(),
 
             pan_center: Pos2::new(0.0, 0.0),
             pan_area_rect: None,
@@ -85,6 +85,7 @@ impl Default for MyApp {
             dragging_gate: None,
 
             on_output_click: None,
+            holding_wire: false,
         }
     }
 }
@@ -93,7 +94,7 @@ impl MyApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let new: Self;
-        if let Some(storage) = cc.storage {
+        if let Some(_storage) = cc.storage {
             new = Default::default();
             // eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
@@ -101,6 +102,14 @@ impl MyApp {
         }
 
         new.gates_setup()
+    }
+
+    pub fn next_id() -> usize {
+        static mut ID: usize = 0;
+        unsafe {
+            ID += 1;
+            ID
+        }
     }
 
     fn gates_setup(mut self) -> Self {
@@ -114,7 +123,7 @@ impl MyApp {
         self
     }
     pub fn load_chips() -> Vec<Primitive> {
-        let mut gates = Vec::<Primitive>::new();
+        let gates = Vec::<Primitive>::new();
 
         //read saves directory for each file add a gate to the vector
         let dir = std::fs::read_dir("./saves").unwrap();
@@ -213,6 +222,22 @@ impl MyApp {
             std::fs::write(file_path, serialized_gate).unwrap();
         }
     }
+    
+    /// Helper method to get the position of a specific output on a gate
+    fn get_gate_output_position(&self, gate_id: usize, output_index: usize) -> Pos2 {
+        // Find the gate with the matching ID
+        for item in &self.live_data {
+            if let Some(gate) = item.as_any().downcast_ref::<Gate>() {
+                if gate.id == gate_id {
+                    if output_index < gate.outs.len() {
+                        return gate.outs[output_index].get_position_with_parent(gate.get_position(), gate.n_out);
+                    }
+                }
+            }
+        }
+        // Default position if gate or output not found
+        Pos2::new(0.0, 0.0)
+    }
 }
 
 impl eframe::App for MyApp {
@@ -224,7 +249,27 @@ impl eframe::App for MyApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        if !self.files_loaded {}
+
+        if let Some(click_info) = &self.on_output_click {
+            // Get the actual output position from the gate using the helper method
+            let output_pos = self.get_gate_output_position(click_info.gate_index, click_info.output_index.id);
+            
+            self.live_data.push(Box::new(Wire::new(
+                click_info.gate_index,
+                click_info.output_index.id,
+                output_pos,
+                click_info.screen_position, // Default position, will be updated later
+                Color32::from_rgb(0, 200, 0),
+                false,
+            )));
+            self.holding_wire = true;
+            self.on_output_click = None; // Reset after creating the wire
+        }
+        
+        // Handle wire completion when clicking in empty space while holding a wire
+        if self.holding_wire && ctx.input(|i| i.pointer.any_released()) {
+            self.holding_wire = false;
+        }
         egui::SidePanel::left("Tools").show(ctx, |ui| {
             ui.set_min_width(SIDE_PANEL_WIDTH);
             ui.vertical_centered_justified(|ui| {
@@ -293,9 +338,9 @@ impl eframe::App for MyApp {
 
             // println!("Primitive gates: {:?}", self.primitive_gates);
             ui.horizontal_centered(|ui| {
-                let response =
-                    dnd(ui, "Primitive").show_vec(&mut self.prims, |ui, item, handle, state| {
-                        let h = handle.ui(ui, |ui| {
+                let _response =
+                    dnd(ui, "Primitive").show_vec(&mut self.prims, |ui, item, handle, _state| {
+                        let _h = handle.ui(ui, |ui| {
                             let w = ui.add(item.make_toolbox_widget());
                             if w.is_pointer_button_down_on() {
                                 self.dragging_kind = Some(item.kind.clone());
@@ -345,10 +390,21 @@ impl eframe::App for MyApp {
                 &mut new_pan_center,
                 &self.dragging_gate.is_some(),
                 |ui: &mut egui::Ui, pan_center: Pos2| {
+                    // Pre-process: collect gate output positions for wire updates
+                    let mut gate_outputs = std::collections::HashMap::new();
+                    for item in self.live_data.iter() {
+                        if let Some(gate) = item.as_any().downcast_ref::<Gate>() {
+                            for (output_index, output) in gate.outs.iter().enumerate() {
+                                let output_pos = output.get_position_with_parent(gate.get_position(), gate.n_out);
+                                gate_outputs.insert((gate.id, output_index), output_pos);
+                            }
+                        }
+                    }
+                    
                     // draw logic here using `pan_center`
-                    for (i, gate) in &mut self.live_data.iter_mut().enumerate() {
+                    for (i, item) in &mut self.live_data.iter_mut().enumerate() {
                         // Get gate world position
-                        let world_pos = gate.get_position();
+                        let world_pos = item.get_position();
 
                         // Convert to screen-local position
                         let screen_pos = world_pos - pan_center.to_vec2();
@@ -361,12 +417,12 @@ impl eframe::App for MyApp {
                         let rect = egui::Rect::from_min_size(screen_pos, egui::vec2(100.0, 60.0)); // customize size
                         let builder = UiBuilder::new().max_rect(rect);
 
-                        let kind = gate.get_kind();
+                        let kind = item.get_kind();
 
-                        let response= match kind {
-                            Logicals::Primitive(_) => {
+                        let _response = match kind {
+                            Logicals::Gate(_p_kind) => {
                                 ui.scope_builder(builder, |ui| {
-                                    let response = ui.add(gate.show(ui, &mut self.on_output_click));
+                                    let response = item.show(ui, &mut self.on_output_click);
                                     if response.drag_started()
                                         && ui.input(|i| !i.key_down(egui::Key::Space))
                                     {
@@ -377,12 +433,13 @@ impl eframe::App for MyApp {
                                         if index == i && response.dragged() {
                                             if let Some(pointer_pos) = ui.ctx().pointer_hover_pos()
                                             {
-                                                let _ = gate.set_position(
+                                                let _ = item.set_position(
                                                     pointer_pos - pan_center.to_vec2(),
                                                 );
                                                 println!(
                                                     "Dragging gate: {:?} to position: {:?}",
-                                                    index, gate.get_position()
+                                                    index,
+                                                    item.get_position()
                                                 );
                                             }
                                         }
@@ -390,21 +447,25 @@ impl eframe::App for MyApp {
                                         if response.drag_stopped() {
                                             self.dragging_gate = None;
                                         }
-                                    }
+                                    };
+                                    response
                                 })
-                                .response
                             }
                             Logicals::Wire => {
-                                // Draw the wire
-                        // wire.ui(ui);
-                                ui.label("Wire placeholder") // Placeholder for wire drawing
-                            }
-                            Logicals::Gate(_) => {
-                                // Draw the custom gate
-                                ui.label("Custom gate placeholder") // Placeholder for custom gate drawing
+                                // Update wire's source position before rendering
+                                if let Some(wire) = item.as_any_mut().downcast_mut::<Wire>() {
+                                    // Get the source position from our pre-collected data
+                                    if let Some(&source_pos) = gate_outputs.get(&(wire.source_gate_id, wire.source_output_index)) {
+                                        wire.update_source_position(source_pos);
+                                    }
+                                }
+                                
+                                // Handle wire drawing logic here with proper pan area positioning
+                                ui.scope_builder(builder, |ui| {
+                                    item.show(ui, &mut self.on_output_click)
+                                })
                             }
                         };
-
                     }
                     self.pan_center = pan_center; // update AFTER the widget runs
                 },
