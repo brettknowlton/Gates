@@ -1,7 +1,16 @@
 pub mod gate;
-use super::*;
 pub use gate::Gate;
+
+mod wire;
+pub use wire::Wire;
+
+mod io;
+pub use io::{Input, Output, Io, IOKind};
+
+use super::app::ClickItem;
+
 use serde;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
@@ -9,19 +18,18 @@ use std::error::Error;
 
 use egui::{Color32, Direction, Layout, Pos2, Response, Sense, Ui, Widget};
 
-mod output;
-pub use output::Output;
 
 const LINE_THICKNESS: f32 = 2.0;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Logicals {
     Gate(GateType),
-    Primitive(PrimitiveKind),
     Wire,
+    IO(IOKind),
 }
 
 #[derive(Debug)]
-struct InvalidOperationError;
+pub struct InvalidOperationError;
 impl Error for InvalidOperationError {}
 
 impl Display for InvalidOperationError {
@@ -30,21 +38,49 @@ impl Display for InvalidOperationError {
     }
 }
 
-pub trait Logical {
+pub trait Logical: AsAny {
+    /// Ticks the logical element, updating its state.
+    /// This is where the logic of the element is processed.
     fn tick(self);
-    fn get_position(&self) -> Pos2;
+    fn get_position(&self) -> Result<Pos2, Box<dyn Error>> {
+        println!("get_position not implemented for this type");
+        Err(Box::new(InvalidOperationError))
+    }
     fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>>;
 
-    fn get_kind(&self) -> Logicals {
-        Logicals::Gate(GateType::None)
+    fn get_kind(&self) -> Logicals;
+
+    fn show(&self, ui: &mut Ui, click_item: &mut Option<ClickItem>, live_data: &HashMap<usize, Box<dyn Logical>>) -> Response ;
+    fn click_on(&mut self) {
+        // Default implementation, can be overridden by specific logical types
+        println!("Click on not implemented for this type");
+    }
+
+}
+
+
+// Define a trait to allow downcasting
+pub trait AsAny {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+// Implement AsAny for all types that implement Logical
+impl<T: Logical + 'static> AsAny for T {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize)]
 pub enum GateType {
     #[default]
     None,
-    Primitive(PrimitiveKind),
+    Primitive(PrimitiveType),
     Wire,
     Custom,
 }
@@ -60,37 +96,12 @@ impl Display for GateType {
     }
 }
 
-impl GateType {
-    pub fn lookup_kind(name: &str) -> GateType {
-        match name {
-            "TOGGLE" => GateType::Primitive(PrimitiveKind::TOGGLE),
-            "LIGHT" => GateType::Primitive(PrimitiveKind::LIGHT),
-            "BUFFER" => GateType::Primitive(PrimitiveKind::BUFFER),
-            "NOT" => GateType::Primitive(PrimitiveKind::NOT),
-            "OR" => GateType::Primitive(PrimitiveKind::OR),
-            "AND" => GateType::Primitive(PrimitiveKind::AND),
-            _ => GateType::None,
-        }
-    }
 
-    pub fn is_primitive(&self) -> bool {
-        matches!(self, GateType::Primitive(_))
-    }
-
-    pub fn primitive_kind(&self) -> Option<PrimitiveKind> {
-        if let GateType::Primitive(kind) = self {
-            Some(kind.clone())
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
-pub enum PrimitiveKind {
+#[derive(serde::Deserialize, serde::Serialize, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PrimitiveType {
     #[default]
     None,
-    TOGGLE,
+    PULSE,
     LIGHT,
     BUFFER,
     NOT,
@@ -98,21 +109,21 @@ pub enum PrimitiveKind {
     AND,
 }
 
-impl Display for PrimitiveKind {
+impl Display for PrimitiveType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PrimitiveKind::None => write!(f, "None"),
-            PrimitiveKind::TOGGLE => write!(f, "TOGGLE"),
-            PrimitiveKind::LIGHT => write!(f, "LIGHT"),
-            PrimitiveKind::BUFFER => write!(f, "BUFFER"),
-            PrimitiveKind::NOT => write!(f, "NOT"),
-            PrimitiveKind::OR => write!(f, "OR"),
-            PrimitiveKind::AND => write!(f, "AND"),
+            PrimitiveType::None => write!(f, "None"),
+            PrimitiveType::PULSE => write!(f, "PULSE"),
+            PrimitiveType::LIGHT => write!(f, "LIGHT"),
+            PrimitiveType::BUFFER => write!(f, "BUFFER"),
+            PrimitiveType::NOT => write!(f, "NOT"),
+            PrimitiveType::OR => write!(f, "OR"),
+            PrimitiveType::AND => write!(f, "AND"),
         }
     }
 }
 
-impl Widget for PrimitiveKind {
+impl Widget for PrimitiveType {
     fn ui(self, ui: &mut Ui) -> Response {
         let r = ui.add_enabled_ui(false, |ui| {
             ui.with_layout(Layout::centered_and_justified(Direction::TopDown), |ui| {
@@ -122,6 +133,9 @@ impl Widget for PrimitiveKind {
         r.response
     }
 }
+
+
+
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -133,33 +147,29 @@ pub struct Primitive {
 }
 
 impl Primitive {
-    pub fn kind_as_str(self) -> String {
-        self.kind.to_string().clone()
-    }
-
     pub fn from_values(label: &str, num_inputs: usize, num_outputs: usize) -> Primitive {
         let kind: GateType;
         match label {
-            "TOGGLE" => {
-                kind = GateType::Primitive(PrimitiveKind::TOGGLE);
+            "PULSE" => {
+                kind = GateType::Primitive(PrimitiveType::PULSE);
             }
             "LIGHT" => {
-                kind = GateType::Primitive(PrimitiveKind::LIGHT);
+                kind = GateType::Primitive(PrimitiveType::LIGHT);
             }
             "BUFFER" => {
-                kind = GateType::Primitive(PrimitiveKind::BUFFER);
+                kind = GateType::Primitive(PrimitiveType::BUFFER);
             }
             "NOT" => {
-                kind = GateType::Primitive(PrimitiveKind::NOT);
+                kind = GateType::Primitive(PrimitiveType::NOT);
             }
             "OR" => {
-                kind = GateType::Primitive(PrimitiveKind::OR);
+                kind = GateType::Primitive(PrimitiveType::OR);
             }
             "AND" => {
-                kind = GateType::Primitive(PrimitiveKind::AND);
+                kind = GateType::Primitive(PrimitiveType::AND);
             }
             _ => {
-                kind = GateType::Primitive(PrimitiveKind::None);
+                kind = GateType::Primitive(PrimitiveType::None);
             }
         }
         let var = Primitive {
@@ -188,121 +198,5 @@ impl Primitive {
 impl Widget for Primitive {
     fn ui(self, _ui: &mut Ui) -> Response {
         todo!()
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
-#[serde(default)]
-pub struct Input {
-    pub id: usize,
-    pub name: Option<String>,
-    pub parent: Option<Gate>, // Optional parent gate, if this input belongs to a gate
-
-    pub signal: bool,
-    pub connected: bool,
-}
-
-impl Input {
-    pub fn new(n: usize, parent_gate: &Gate) -> Self {
-        Input {
-            id: n,
-            name: None,
-            parent: Some(parent_gate.clone()), // Optional parent gate, if this input belongs to a gate
-
-            signal: false,
-            connected: false,
-        }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
-struct WireLine {
-    p1: Pos2,
-    p2: Pos2,
-    color: Color32,
-    smoothing: bool,
-}
-impl WireLine {
-    pub fn new(p1: Pos2, p2: Pos2, color: Color32, smoothing: bool) -> Self {
-        WireLine {
-            p1,
-            p2,
-            color,
-            smoothing,
-        }
-    }
-}
-
-impl Hash for WireLine {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.p1.x.to_bits().hash(state);
-        self.p1.y.to_bits().hash(state);
-        self.p2.x.to_bits().hash(state);
-        self.p2.y.to_bits().hash(state);
-        self.color.hash(state);
-        self.smoothing.hash(state);
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct Wire {
-    signal: bool,
-    source: Output,
-    dest: Option<Input>,
-    line: WireLine,
-}
-
-impl Wire {
-    fn new(source: Output, pos2: Pos2, color: Color32, smoothing: bool) -> Self {
-        let pos1 = source.get_position();
-
-        Wire {
-            signal: false,
-            source,
-            dest: None,
-            line: WireLine::new(pos1, pos2, color, smoothing),
-        }
-    }
-
-    fn delete(mut self) {
-        //disconnect both output and input
-        if let Some(dest) = &mut self.dest {
-            dest.connected = false;
-        }
-        self.source.connected = false;
-        self.signal = false;
-        self.dest = None;
-    }
-
-    fn get_kind(&self) -> Logicals {
-        Logicals::Wire
-    }
-
-    fn on(mut self) {
-        self.signal = true;
-    }
-
-    fn off(mut self) {
-        self.signal = false
-    }
-}
-
-impl Logical for Wire {
-    fn tick(self) {
-        if let Some(mut out) = self.dest {
-            if self.signal {
-                out.signal = true;
-            } else {
-                out.signal = false;
-            }
-        }
-    }
-    fn get_position(&self) -> Pos2 {
-        self.line.p1
-    }
-
-    fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>> {
-        Err(Box::new(InvalidOperationError))
     }
 }

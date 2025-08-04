@@ -9,16 +9,16 @@ pub struct PanArea<'a> {
 }
 
 impl<'a> PanArea<'a> {
-    pub fn new<F>(center: &'a mut Pos2, content: F) -> Self
-    where
-        F: FnOnce(&mut Ui, Pos2) + 'a,
-    {
-        Self {
-            content: Box::new(content),
-            center,
-            drag_blocker: None,
-        }
-    }
+    // pub fn new<F>(center: &'a mut Pos2, content: F) -> Self
+    // where
+    //     F: FnOnce(&mut Ui, Pos2) + 'a,
+    // {
+    //     Self {
+    //         content: Box::new(content),
+    //         center,
+    //         drag_blocker: None,
+    //     }
+    // }
 
     pub fn with_drag_blocker<F>(center: &'a mut Pos2, drag_blocker: &'a bool, content: F) -> Self
     where

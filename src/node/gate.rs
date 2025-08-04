@@ -1,12 +1,15 @@
+use crate::MyApp;
+use crate::node::io::*;
+
 use super::*;
-use eframe::glow::FILL;
-use egui::{
-    Align, Align2, Button, Checkbox, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2, vec2,
-};
+
+use egui::{Align, Align2, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2};
 use egui::{Color32, Pos2, StrokeKind, UiBuilder};
 
-use super::Output;
+use std::collections::HashMap;
 use std::hash::Hash;
+
+const GATE_WIDTH: f32 = 100.0;
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -18,20 +21,21 @@ pub struct Gate {
 
     //logical properties
     pub n_in: usize,
-    pub ins: Vec<Input>,
+    pub ins: Vec<usize>,
 
     pub n_out: usize,
-    pub outs: Vec<Output>,
+    pub outs: Vec<usize>,
 
     pub kind: GateType,
+    state: bool,
 }
 
 impl Logical for Gate {
     fn tick(self) {
         println!("This is a generic gate being ticked: {}", self.label);
     }
-    fn get_position(&self) -> Pos2 {
-        self.position.to_pos2()
+    fn get_position(&self) -> Result<egui::Pos2, Box<(dyn Error + 'static)>> {
+        Ok(self.position.to_pos2())
     }
     fn get_kind(&self) -> Logicals {
         Logicals::Gate(self.kind.clone())
@@ -40,7 +44,104 @@ impl Logical for Gate {
         self.position = GridVec2::from(pos);
         Ok(())
     }
+    fn show(
+        &self,
+        ui: &mut Ui,
+        click_item: &mut Option<ClickItem>,
+        live_data: &HashMap<usize, Box<dyn Logical>>,
+    ) -> Response {
+        let size = Vec2::new(GATE_WIDTH, 50.0);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
 
+        let checkbox_height = ui.spacing().interact_size.y;
+
+        // Draw the bounding box
+        ui.painter().rect(
+            rect,
+            10.0,
+            Color32::from_rgb(30, 30, 30),
+            Stroke::new(1.0, Color32::GRAY),
+            StrokeKind::Middle,
+        );
+
+        // Layout for the gate's three sections
+        let left_rect = Rect::from_min_max(
+            rect.left_top(),
+            pos2(rect.left() + checkbox_height, rect.bottom()),
+        );
+        let center_rect = Rect::from_min_max(
+            pos2(rect.left() + checkbox_height, rect.top()),
+            pos2(rect.right() - checkbox_height, rect.bottom()),
+        );
+        let right_rect = Rect::from_min_max(
+            pos2(rect.right() - checkbox_height, rect.top()),
+            rect.right_bottom(),
+        );
+
+        // LEFT SIDE - Input indicators
+        ui.scope_builder(
+            UiBuilder::new()
+                .layout(Layout::top_down(Align::LEFT))
+                .max_rect(left_rect),
+            |ui| {
+                let total_height = self.n_in as f32 * checkbox_height;
+                let parent_height = left_rect.height();
+                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
+
+                ui.add_space(top_padding);
+                ui.vertical(|ui| {
+                    for input in &self.ins {
+                        live_data.get(input).map(|input_logical| {
+                            if let Some(input) = input_logical.as_any().downcast_ref::<Input>() {
+                                ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                                    input.show(ui, click_item, live_data);
+                                });
+                            }
+                        });
+                    }
+                });
+            },
+        );
+
+        // CENTER - Label only
+        ui.painter()
+            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
+        ui.painter().text(
+            center_rect.center(),
+            Align2::CENTER_CENTER,
+            self.label.clone(),
+            TextStyle::Button.resolve(ui.style()),
+            Color32::WHITE,
+        );
+
+        // RIGHT SIDE - Output buttons for wire creation
+        ui.scope_builder(
+            UiBuilder::new()
+                .layout(Layout::top_down(Align::RIGHT))
+                .max_rect(right_rect),
+            |ui| {
+                let total_height = self.outs.len() as f32 * checkbox_height;
+                let parent_height = right_rect.height();
+                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
+
+                ui.add_space(top_padding);
+
+                ui.vertical(|ui| {
+                    for (_, output) in self.outs.iter().enumerate() {
+                        live_data.get(output).map(|input_logical| {
+                            if let Some(output) = input_logical.as_any().downcast_ref::<Output>() {
+                                ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                                    output.show(ui, click_item, live_data);
+                                });
+                            }
+                        });
+                    }
+                });
+            },
+        );
+
+        response
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
@@ -81,122 +182,6 @@ impl Hash for GridVec2 {
     }
 }
 
-impl Widget for &mut Gate {
-    fn ui(self, ui: &mut Ui) -> Response {
-        let size = Vec2::new(150.0, 110.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-
-        // Draw the bounding box
-        ui.painter().rect(
-            rect,
-            10.0,
-            Color32::from_rgb(30, 30, 30),
-            Stroke::new(1.0, Color32::GRAY),
-            StrokeKind::Middle,
-        );
-
-        // Layout for the gate's three sections
-        let left_rect =
-            Rect::from_min_max(rect.left_top(), pos2(rect.left() + 40.0, rect.bottom()));
-        let center_rect = Rect::from_min_max(
-            pos2(rect.left() + 40.0, rect.top()),
-            pos2(rect.right() - 40.0, rect.bottom()),
-        );
-        let right_rect =
-            Rect::from_min_max(pos2(rect.right() - 40.0, rect.top()), rect.right_bottom());
-
-        // LEFT SIDE - Input indicators
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::LEFT))
-                .max_rect(left_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.n_in as f32 * checkbox_height;
-                let parent_height = left_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-                ui.vertical(|ui| {
-                    for input in &self.outs {
-                        ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                            let button_color = if input.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                // Create a new wire with points at this output and the pointer location, push it to the live_data vector
-                                println!("Input Clicked: {}", input.id);
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        // CENTER - Label only
-        ui.painter()
-            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
-        ui.painter().text(
-            center_rect.center(),
-            Align2::CENTER_CENTER,
-            self.label.clone(),
-            TextStyle::Button.resolve(ui.style()),
-            Color32::WHITE,
-        );
-
-        // RIGHT SIDE - Output buttons for wire creation
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::RIGHT))
-                .max_rect(right_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.outs.len() as f32 * checkbox_height;
-                let parent_height = right_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-
-                ui.vertical(|ui| {
-                    for (i, output) in self.outs.iter().enumerate() {
-                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            let button_color = if output.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                let cursor_pos = ui
-                                    .ctx()
-                                    .input(|i| i.pointer.hover_pos().unwrap_or_default());
-                                *on_output_click = Some(OutputClick {
-                                    gate_index: self.id,
-                                    output_index: i,
-                                    screen_position: cursor_pos,
-                                });
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        response
-    }
-}
-
 impl Gate {
     pub fn new(name: String, id: usize) -> Gate {
         let n_ins = 0;
@@ -214,23 +199,25 @@ impl Gate {
             outs: Vec::new(),
 
             kind: GateType::None,
+
+            state: false,
         };
-        g.create_inputs(g.n_in);
-        g.create_outputs(g.n_out);
         g
     }
 
-    pub fn get_signals_in(&self) -> Vec<bool> {
-        self.ins.iter().map(|i| i.signal).collect()
-    }
-    pub fn get_signals_out(&self) -> Vec<bool> {
-        self.outs.iter().map(|o| o.signal).collect()
+    pub fn click_on(&mut self) {
+        match self.kind {
+            GateType::Primitive(PrimitiveType::PULSE) => {
+                self.state = !self.state;
+            }
+            _ => println!("This gate type does not support click actions"),
+        }
     }
 
-    fn from_template(t: &Primitive, pos: Pos2, id: usize) -> Gate {
+    fn from_template(t: &Primitive, pos: Pos2) -> Gate {
         let g = Gate {
             label: t.label.clone(),
-            id,
+            id: MyApp::next_id(),
             position: GridVec2::new(pos.x, pos.y),
             size: GridVec2::new(150.0, 110.0),
 
@@ -240,9 +227,8 @@ impl Gate {
             outs: Vec::new(),
 
             kind: t.kind.clone(),
+            state: false,
         };
-        g.create_inputs(g.n_in);
-        g.create_outputs(g.n_out);
         g
     }
 
@@ -254,75 +240,83 @@ impl Gate {
         }
     }
 
-    pub fn create_gate_from_template(t: GateType, pos: Pos2, id: Option<usize>) -> Gate {
+    pub fn create_gate_from_template(t: GateType, pos: Pos2) -> Gate {
         print!("Creating gate from template ID: {:?}", t);
-        let id = id.unwrap_or_else(Gate::next_id);
         let new_gate = match t {
-            GateType::Primitive(PrimitiveKind::TOGGLE) => {
-                Gate::from_template(&Primitive::from_values("TOGGLE", 0, 1), pos, id)
+            GateType::Primitive(PrimitiveType::PULSE) => {
+                Gate::from_template(&Primitive::from_values("PULSE", 0, 1), pos)
             }
-            GateType::Primitive(PrimitiveKind::LIGHT) => {
-                Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos, id)
+            GateType::Primitive(PrimitiveType::LIGHT) => {
+                Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
             }
-            GateType::Primitive(PrimitiveKind::BUFFER) => {
-                Gate::from_template(&Primitive::from_values("BUFFER", 1, 1), pos, id)
+            GateType::Primitive(PrimitiveType::BUFFER) => {
+                Gate::from_template(&Primitive::from_values("BUFFER", 1, 1), pos)
             }
-            GateType::Primitive(PrimitiveKind::NOT) => {
-                Gate::from_template(&Primitive::from_values("NOT", 1, 1), pos, id)
+            GateType::Primitive(PrimitiveType::NOT) => {
+                Gate::from_template(&Primitive::from_values("NOT", 1, 1), pos)
             }
-            GateType::Primitive(PrimitiveKind::OR) => {
-                Gate::from_template(&Primitive::from_values("OR", 2, 1), pos, id)
+            GateType::Primitive(PrimitiveType::OR) => {
+                Gate::from_template(&Primitive::from_values("OR", 2, 1), pos)
             }
-            GateType::Primitive(PrimitiveKind::AND) => {
-                Gate::from_template(&Primitive::from_values("AND", 2, 1), pos, id)
+            GateType::Primitive(PrimitiveType::AND) => {
+                Gate::from_template(&Primitive::from_values("AND", 2, 1), pos)
             }
-            _ => Gate::from_template(&Primitive::from_values("E: Not Found", 1, 1), pos, id),
+            _ => Gate::from_template(&Primitive::from_values("E: Not Found", 1, 1), pos),
         };
 
         println!("Created gate: {:?}", new_gate);
         new_gate
     }
 
-    fn create_inputs(&self, n_in: usize) -> Vec<Input> {
-        let mut new_ins = Vec::<Input>::new();
-        for n in 0..n_in {
-            new_ins.push(Input::new(n, self))
-        }
-        new_ins
+    pub fn create_io(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
+        self.create_inputs(live_data);
+        self.create_outputs(live_data);
     }
 
-    fn create_outputs(&self, n_out: usize) -> Vec<Output> {
-        let mut new_outs = Vec::<Output>::new();
-        for n in 0..n_out {
-            new_outs.push(Output::new(n, self))
+    pub fn create_inputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
+        let mut new_ins = Vec::<usize>::new();
+        for _ in 0..self.n_in {
+            let new_input = Input::new(self.id);
+            live_data.insert(new_input.id, Box::new(new_input.clone()));
+            new_ins.push(new_input.id);
         }
-        new_outs
+        self.ins = new_ins;
+    }
+
+    pub fn create_outputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
+        let mut new_outs = Vec::<usize>::new();
+        for _ in 0..self.n_out {
+            let new_output = Output::new(self.id);
+            live_data.insert(new_output.id, Box::new(new_output.clone()));
+            new_outs.push(new_output.id);
+        }
+        self.outs = new_outs;
     }
 
     pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
         let kind: GateType;
         let id = Gate::next_id();
         match label.as_str() {
-            "TOGGLE" => {
-                kind = GateType::Primitive(PrimitiveKind::TOGGLE);
+            "PULSE" => {
+                kind = GateType::Primitive(PrimitiveType::PULSE);
             }
             "LIGHT" => {
-                kind = GateType::Primitive(PrimitiveKind::LIGHT);
+                kind = GateType::Primitive(PrimitiveType::LIGHT);
             }
             "BUFFER" => {
-                kind = GateType::Primitive(PrimitiveKind::BUFFER);
+                kind = GateType::Primitive(PrimitiveType::BUFFER);
             }
             "NOT" => {
-                kind = GateType::Primitive(PrimitiveKind::NOT);
+                kind = GateType::Primitive(PrimitiveType::NOT);
             }
             "OR" => {
-                kind = GateType::Primitive(PrimitiveKind::OR);
+                kind = GateType::Primitive(PrimitiveType::OR);
             }
             "AND" => {
-                kind = GateType::Primitive(PrimitiveKind::AND);
+                kind = GateType::Primitive(PrimitiveType::AND);
             }
             _ => {
-                kind = GateType::Primitive(PrimitiveKind::None);
+                kind = GateType::Primitive(PrimitiveType::None);
             }
         }
 
@@ -338,131 +332,9 @@ impl Gate {
             n_out: n_outs,
             outs: Vec::new(),
             kind,
-        };
 
-        g.create_inputs(n_ins);
-        g.create_outputs(n_outs);
+            state: false,
+        };
         g
     }
-
-    pub fn show(&self, ui: &mut Ui, on_output_click: &mut Option<OutputClick>) -> Response {
-        let size = Vec2::new(150.0, 110.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-
-        // Draw the bounding box
-        ui.painter().rect(
-            rect,
-            10.0,
-            Color32::from_rgb(30, 30, 30),
-            Stroke::new(1.0, Color32::GRAY),
-            StrokeKind::Middle,
-        );
-
-        // Layout for the gate's three sections
-        let left_rect =
-            Rect::from_min_max(rect.left_top(), pos2(rect.left() + 40.0, rect.bottom()));
-        let center_rect = Rect::from_min_max(
-            pos2(rect.left() + 40.0, rect.top()),
-            pos2(rect.right() - 40.0, rect.bottom()),
-        );
-        let right_rect =
-            Rect::from_min_max(pos2(rect.right() - 40.0, rect.top()), rect.right_bottom());
-
-        // LEFT SIDE - Input indicators
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::LEFT))
-                .max_rect(left_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.n_in as f32 * checkbox_height;
-                let parent_height = left_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-                ui.vertical(|ui| {
-                    for input in &self.outs {
-                        ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                            let button_color = if input.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                // Create a new wire with points at this output and the pointer location, push it to the live_data vector
-                                println!("Input Clicked: {}", input.id);
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        // CENTER - Label only
-        ui.painter()
-            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
-        ui.painter().text(
-            center_rect.center(),
-            Align2::CENTER_CENTER,
-            self.label.clone(),
-            TextStyle::Button.resolve(ui.style()),
-            Color32::WHITE,
-        );
-
-        // RIGHT SIDE - Output buttons for wire creation
-        ui.scope_builder(
-            UiBuilder::new()
-                .layout(Layout::top_down(Align::RIGHT))
-                .max_rect(right_rect),
-            |ui| {
-                let checkbox_height = ui.spacing().interact_size.y;
-                let total_height = self.outs.len() as f32 * checkbox_height;
-                let parent_height = right_rect.height();
-                let top_padding = ((parent_height - total_height) / 2.0).max(0.0);
-
-                ui.add_space(top_padding);
-
-                ui.vertical(|ui| {
-                    for (i, output) in self.outs.iter().enumerate() {
-                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                            let button_color = if output.signal {
-                                Color32::GREEN
-                            } else {
-                                Color32::DARK_RED
-                            };
-
-                            let btn = Button::new(" ")
-                                .fill(button_color)
-                                .min_size(vec2(18.0, 18.0));
-
-                            if ui.add(btn).clicked() {
-                                let cursor_pos = ui
-                                    .ctx()
-                                    .input(|i| i.pointer.hover_pos().unwrap_or_default());
-                                *on_output_click = Some(OutputClick {
-                                    gate_index: self.id,
-                                    output_index: i,
-                                    screen_position: cursor_pos,
-                                });
-                            }
-                        });
-                    }
-                });
-            },
-        );
-
-        response
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OutputClick {
-    pub gate_index: usize,
-    pub output_index: usize,
-    pub screen_position: egui::Pos2,
 }
