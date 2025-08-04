@@ -5,18 +5,17 @@ mod wire;
 pub use wire::Wire;
 
 mod io;
-pub use io::{Input, Output, Io, IOKind};
+pub use io::{IOKind, Input, Io, Output};
 
-use super::app::ClickItem;
+pub use super::app::ClickItem;
+pub use eframe::egui::{Button, Color32, Direction, Layout, Pos2, Response, Sense, Ui, Widget, vec2};
 
 use serde;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+use std::fmt::{Display, Formatter};
 
 use std::error::Error;
-
-use egui::{Color32, Direction, Layout, Pos2, Response, Sense, Ui, Widget};
 
 
 const LINE_THICKNESS: f32 = 2.0;
@@ -50,14 +49,17 @@ pub trait Logical: AsAny {
 
     fn get_kind(&self) -> Logicals;
 
-    fn show(&self, ui: &mut Ui, click_item: &mut Option<ClickItem>, live_data: &HashMap<usize, Box<dyn Logical>>) -> Response ;
+    fn show(
+        &self,
+        ui: &mut Ui,
+        click_item: &mut Option<ClickItem>,
+        live_data: &HashMap<usize, Box<dyn Logical>>,
+    ) -> Response;
     fn click_on(&mut self) {
         // Default implementation, can be overridden by specific logical types
         println!("Click on not implemented for this type");
     }
-
 }
-
 
 // Define a trait to allow downcasting
 pub trait AsAny {
@@ -74,7 +76,6 @@ impl<T: Logical + 'static> AsAny for T {
         self
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize)]
 pub enum GateType {
@@ -95,7 +96,6 @@ impl Display for GateType {
         }
     }
 }
-
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
@@ -133,9 +133,6 @@ impl Widget for PrimitiveType {
         r.response
     }
 }
-
-
-
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -181,13 +178,13 @@ impl Primitive {
         var
     }
 
-    pub fn make_toolbox_widget(&self) -> egui::Button<'static> {
+    pub fn make_toolbox_widget(&self) -> Button<'static> {
         //square selectable button that takes a label and number of inputs and outputs
-        let var = egui::Button::selectable(
+        let var = Button::selectable(
             false, // or set to true if you want it selected by default
             self.label.clone(),
         )
-        .min_size(egui::vec2(110., 110.))
+        .min_size(vec2(110., 110.))
         .corner_radius(10.)
         .sense(Sense::drag())
         .sense(Sense::click());

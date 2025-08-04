@@ -1,6 +1,6 @@
 use super::*;
 
-use egui::{Rect, Stroke};
+use eframe::egui::{Rect, Stroke};
 use crate::MyApp;
 
 
@@ -93,7 +93,7 @@ impl Logical for Wire {
         Logicals::Wire
     }
 
-    fn get_position(&self) -> Result<egui::Pos2, Box<(dyn Error + 'static)>> {
+    fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.line.p1)
     }
 

@@ -6,7 +6,7 @@ pub use input::Input;
 
 pub use crate::{ MyApp, node::InvalidOperationError};
 
-pub use egui::{Color32, Pos2, Response, Ui, Button, vec2, Align};
+pub use eframe::egui::{Align};
 
 
 pub trait Io: Logical + AsAny {

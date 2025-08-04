@@ -107,7 +107,7 @@ impl Logical for Output {
         Err(Box::new(InvalidOperationError))
     }
 
-    fn get_position(&self) -> Result<egui::Pos2, Box<(dyn Error + 'static)>> {
+    fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         print!("Parent gate not found, use get_position with live data");
         Err(Box::new(InvalidOperationError))
     }

@@ -1,4 +1,4 @@
-pub use egui;
+pub use eframe::egui;
 
 pub mod app;
 pub use app::*;

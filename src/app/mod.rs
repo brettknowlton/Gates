@@ -208,7 +208,7 @@ impl MyApp {
         }
     }
 
-    fn update_wires(&mut self, ui: &mut Ui) {
+    fn update_wires(&mut self, ui: &mut Ui, pan_center: Pos2) {
         //loop live data and collect all inputs and outputs into one HashMap and Wires into another
         let gates: HashMap<usize, Pos2> = self
             .live_data
@@ -236,11 +236,13 @@ impl MyApp {
             if let Some(w) = wire.as_any_mut().downcast_mut::<Wire>() {
                 if w.connected {
                     if let Some(source_pos) = gates.get(&w.source_id) {
+                        //offset postion with pan area
+                        let source_pos_moved = *source_pos - pan_center.to_vec2();
+                        let mut dest_pos_moved = w.dest.and_then(|dest_id| gates.get(&dest_id).cloned()).unwrap_or(source_pos_moved);
+                        dest_pos_moved = dest_pos_moved - pan_center.to_vec2();
                         w.set_positions(
-                            *source_pos,
-                            w.dest
-                                .and_then(|dest_id| gates.get(&dest_id).cloned())
-                                .unwrap_or(*source_pos),
+                            source_pos_moved,
+                            dest_pos_moved,
                         );
                     }
                 } else {
@@ -465,7 +467,7 @@ impl eframe::App for MyApp {
                                     let rect = egui::Rect::from_min_size(
                                         screen_pos,
                                         egui::vec2(100.0, 60.0),
-                                    ); // customize size
+                                    ); // customize size 
                                     let builder = UiBuilder::new().max_rect(rect);
 
                                     let r= ui.scope_builder(builder, |ui| {
@@ -547,7 +549,7 @@ impl eframe::App for MyApp {
             ));
 
             //refresh all wire positions
-            self.update_wires(ui);
+            self.update_wires(ui, self.pan_center);
         });
 
 

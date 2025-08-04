@@ -2,8 +2,6 @@ use super::*;
 
 use std::collections::HashMap;
 
-use egui::{Align, Button, vec2};
-
 use crate::{gate::GridVec2, node::*};
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
@@ -104,7 +102,7 @@ impl Logical for Input {
         Err(Box::new(InvalidOperationError))
     }
 
-    fn get_position(&self) -> Result<egui::Pos2, Box<(dyn Error + 'static)>> {
+    fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         print!("Parent gate not found, use get_position with live data");
         Err(Box::new(InvalidOperationError))
     }

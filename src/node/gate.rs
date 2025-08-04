@@ -3,8 +3,8 @@ use crate::node::io::*;
 
 use super::*;
 
-use egui::{Align, Align2, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2};
-use egui::{Color32, Pos2, StrokeKind, UiBuilder};
+use eframe::egui::{Align, Align2, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2};
+use eframe::egui::{Color32, Pos2, StrokeKind, UiBuilder};
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -34,7 +34,7 @@ impl Logical for Gate {
     fn tick(self) {
         println!("This is a generic gate being ticked: {}", self.label);
     }
-    fn get_position(&self) -> Result<egui::Pos2, Box<(dyn Error + 'static)>> {
+    fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.position.to_pos2())
     }
     fn get_kind(&self) -> Logicals {

@@ -7,7 +7,6 @@ name = "Gates"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "egui",
  "egui_dnd",
  "egui_infinite_scroll",
  "log",
