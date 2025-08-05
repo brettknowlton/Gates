@@ -8,6 +8,7 @@ use crate::{gate::GridVec2, node::*};
 #[serde(default)]
 pub struct Input {
     pub id: usize,
+    pub index: usize, // index of the input in the parent gate
     pub name: Option<String>,
     pub parent_id: Option<usize>, // Optional parent gate, if this output belongs to a gate
     pub signal: bool,
@@ -17,10 +18,11 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new(parent_id: usize) -> Self {
+    pub fn new(parent_id: usize, index: usize) -> Self {
         let n = MyApp::next_id();
         Input {
             id: n,
+            index,
             name: None,
             parent_id: Some(parent_id), // Optional parent gate, if this input belongs to a gate
             signal: false,
@@ -42,11 +44,9 @@ impl Input {
             if let Some(parent) = parent_gen {
                 if let Some(gp) = parent.as_any().downcast_ref::<Gate>() {
                     let pos = gp.get_position().unwrap();
-                    //search parent.ins for which input this is
-                    let index = gp.ins.iter().position(|i| *i == self.id).unwrap_or(0);
                     let spacing = 30.0; // Vertical spacing between inputs
 
-                    let y_offset = (index as f32 - (gp.n_in as f32 - 1.0) / 2.0) * spacing;
+                    let y_offset = (self.index as f32 - (gp.n_in as f32 - 1.0) / 2.0) * spacing;
 
                     Ok(Pos2 {
                         x: pos.x - 50.0, // Offset from the gate's position
@@ -83,13 +83,21 @@ impl Input {
 }
 
 impl Logical for Input {
-    fn tick(mut self) {
+    fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         //in an input's wire is not connected it's signal will always be false
-        if let Some(_parent) = &self.parent_id {
-            // If the input has a parent gate, signal it
-        } else {
-            self.signal = false;
+        if ins.len() > 1 {
+            return Err(Box::new(InvalidOperationError));
         }
+        if ins.is_empty() {
+            return Ok(HashMap::from([(0, false)])); // If no inputs, return false
+        }
+        //if input is provided, set the signal to the input's value
+        if let Some(signal) = ins.get(&self.parent_id.unwrap_or(0)) {
+            self.signal = *signal;
+        } else {
+            return Err("Input signal not found".into());
+        }
+        Ok(HashMap::from([(0, self.signal)])) // Assuming single output at index 0
     }
 
     fn get_kind(&self) -> Logicals {
@@ -97,13 +105,13 @@ impl Logical for Input {
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn Error>> {
-        print!("Setting position for Input is not allowed, set parent gate position instead");
+        println!("Setting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead");
         // Inputs do not have a position, so we return an error
         Err(Box::new(InvalidOperationError))
     }
 
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
-        print!("Parent gate not found, use get_position with live data");
+        println!("Getting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead");
         Err(Box::new(InvalidOperationError))
     }
 

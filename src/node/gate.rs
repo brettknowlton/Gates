@@ -11,7 +11,7 @@ use std::hash::Hash;
 
 const GATE_WIDTH: f32 = 100.0;
 
-#[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Gate {
     pub label: String,
@@ -21,18 +21,25 @@ pub struct Gate {
 
     //logical properties
     pub n_in: usize,
-    pub ins: Vec<usize>,
+    pub ins: HashMap<usize, bool>, //bool represents the interpreted input state, this will be passed to the gate on its tick() function
 
     pub n_out: usize,
-    pub outs: Vec<usize>,
+    pub outs: HashMap<usize, bool>, //bool represents the desired output state, this will be passed to the outputs on their tick() function
 
     pub kind: GateType,
     state: bool,
 }
 
 impl Logical for Gate {
-    fn tick(self) {
-        println!("This is a generic gate being ticked: {}", self.label);
+    fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
+        let k = self.kind.clone();
+        match k {
+            GateType::Primitive(k) => {
+                // For primitive gates, we can run their logic
+                k.tick(self, ins)
+            }
+            _ => Err("Tick not implemented for this type".into()),
+        }
     }
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.position.to_pos2())
@@ -90,8 +97,8 @@ impl Logical for Gate {
 
                 ui.add_space(top_padding);
                 ui.vertical(|ui| {
-                    for input in &self.ins {
-                        live_data.get(input).map(|input_logical| {
+                    for (id, _) in &self.ins {
+                        live_data.get(id).map(|input_logical| {
                             if let Some(input) = input_logical.as_any().downcast_ref::<Input>() {
                                 ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
                                     input.show(ui, click_item, live_data);
@@ -127,10 +134,10 @@ impl Logical for Gate {
                 ui.add_space(top_padding);
 
                 ui.vertical(|ui| {
-                    for (_, output) in self.outs.iter().enumerate() {
-                        live_data.get(output).map(|input_logical| {
+                    for output in self.outs.iter() {
+                        live_data.get(&output.0).map(|input_logical| {
                             if let Some(output) = input_logical.as_any().downcast_ref::<Output>() {
-                                ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                     output.show(ui, click_item, live_data);
                                 });
                             }
@@ -194,9 +201,9 @@ impl Gate {
             size: GridVec2::new(150.0, 110.0),
 
             n_in: n_ins,
-            ins: Vec::new(),
+            ins: HashMap::new(),
             n_out: n_outs,
-            outs: Vec::new(),
+            outs: HashMap::new(),
 
             kind: GateType::None,
 
@@ -222,9 +229,9 @@ impl Gate {
             size: GridVec2::new(150.0, 110.0),
 
             n_in: t.n_ins as usize,
-            ins: Vec::new(),
+            ins: HashMap::new(),
             n_out: t.n_outs as usize,
-            outs: Vec::new(),
+            outs: HashMap::new(),
 
             kind: t.kind.clone(),
             state: false,
@@ -243,8 +250,14 @@ impl Gate {
     pub fn create_gate_from_template(t: GateType, pos: Pos2) -> Gate {
         print!("Creating gate from template ID: {:?}", t);
         let new_gate = match t {
+            GateType::Primitive(PrimitiveType::HISIGNAL) => {
+                Gate::from_template(&Primitive::from_values("HI-SIGNAL", 0, 1), pos)
+            }
+            GateType::Primitive(PrimitiveType::LOSIGNAL) => {
+                Gate::from_template(&Primitive::from_values("LO-SIGNAL", 0, 1), pos)
+            }
             GateType::Primitive(PrimitiveType::PULSE) => {
-                Gate::from_template(&Primitive::from_values("PULSE", 0, 1), pos)
+                Gate::from_template(&Primitive::from_values("PULSE", 1, 1), pos)
             }
             GateType::Primitive(PrimitiveType::LIGHT) => {
                 Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
@@ -274,21 +287,21 @@ impl Gate {
     }
 
     pub fn create_inputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
-        let mut new_ins = Vec::<usize>::new();
-        for _ in 0..self.n_in {
-            let new_input = Input::new(self.id);
+        let mut new_ins = HashMap::<usize, bool>::new();
+        for i in 0..self.n_in {
+            let new_input = Input::new(self.id, i);
             live_data.insert(new_input.id, Box::new(new_input.clone()));
-            new_ins.push(new_input.id);
+            new_ins.insert(new_input.id, false);
         }
         self.ins = new_ins;
     }
 
     pub fn create_outputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
-        let mut new_outs = Vec::<usize>::new();
-        for _ in 0..self.n_out {
-            let new_output = Output::new(self.id);
+        let mut new_outs = HashMap::<usize, bool>::new();
+        for i in 0..self.n_out {
+            let new_output = Output::new(self.id, i);
             live_data.insert(new_output.id, Box::new(new_output.clone()));
-            new_outs.push(new_output.id);
+            new_outs.insert(new_output.id, false); // Initialize with false signal
         }
         self.outs = new_outs;
     }
@@ -297,6 +310,12 @@ impl Gate {
         let kind: GateType;
         let id = Gate::next_id();
         match label.as_str() {
+            "HI-SIGNAL" => {
+                kind = GateType::Primitive(PrimitiveType::HISIGNAL);
+            }
+            "LO-SIGNAL" => {
+                kind = GateType::Primitive(PrimitiveType::LOSIGNAL);
+            }
             "PULSE" => {
                 kind = GateType::Primitive(PrimitiveType::PULSE);
             }
@@ -328,9 +347,9 @@ impl Gate {
             size: GridVec2::new(150.0, 110.0),
 
             n_in: n_ins,
-            ins: Vec::new(),
+            ins: HashMap::new(),
             n_out: n_outs,
-            outs: Vec::new(),
+            outs: HashMap::new(),
             kind,
 
             state: false,

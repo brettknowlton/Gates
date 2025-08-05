@@ -1,8 +1,7 @@
 use super::*;
 
-use eframe::egui::{Rect, Stroke};
 use crate::MyApp;
-
+use eframe::egui::{Rect, Stroke};
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 pub struct WireLine {
@@ -54,13 +53,17 @@ impl Wire {
             dest: None,
 
             connected: false,
-            line: WireLine::new(position, position, color, smoothing),//line begins at one point
+            line: WireLine::new(position, position, color, smoothing), //line begins at one point
         }
     }
 
     pub fn set_positions(&mut self, p1: Pos2, p2: Pos2) {
         self.line.p1 = p1;
         self.line.p2 = p2;
+    }
+
+    pub fn set_signal(&mut self, signal: bool) {
+        self.signal = signal;
     }
 
     pub fn set_p1(&mut self, p1: Pos2) {
@@ -71,7 +74,12 @@ impl Wire {
     }
 
     pub fn from_io(output_id: usize, position: Pos2) -> Box<Self> {
-        Box::new(Wire::new(output_id, position, Color32::from_rgb(0, 0, 0), false))
+        Box::new(Wire::new(
+            output_id,
+            position,
+            Color32::from_rgb(0, 0, 0),
+            false,
+        ))
     }
     pub fn on(mut self) {
         self.signal = true;
@@ -83,9 +91,26 @@ impl Wire {
 }
 
 impl Logical for Wire {
-    fn tick(self) {
-        if let Some(mut _out) = self.dest {
-            // If the wire has a destination, signal it
+    fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
+        //error if more than one input is provided
+        if ins.len() > 1 {
+            return Err(Box::new(InvalidOperationError));
+        }
+        //if no inputs, return 0
+        if ins.is_empty() {
+            return Ok(HashMap::from([(0, false)])); // If no inputs, return false
+        }
+        //if input is provided, set the signal to the input's value
+        if let Some(signal) = ins.get(&self.source_id) {
+            self.signal = *signal;
+            // Return the signal as a single output with destination ID
+            if let Some(dest_id) = self.dest {
+                return Ok(HashMap::from([(dest_id, self.signal)]));
+            } else {
+                return Ok(HashMap::new()); // If no destination, return the signal
+            }
+        } else {
+            Err("Input signal not found".into())
         }
     }
 
@@ -101,19 +126,27 @@ impl Logical for Wire {
         Err(Box::new(InvalidOperationError))
     }
 
-    fn show(&self, ui: &mut Ui, _on_output_click: &mut Option<ClickItem>, _live_data: &HashMap<usize, Box<dyn Logical>>) -> Response {
-        let response = ui.allocate_rect(Rect::from_min_max(self.line.p1, self.line.p2), Sense::hover());
+    fn show(
+        &self,
+        ui: &mut Ui,
+        _on_output_click: &mut Option<ClickItem>,
+        _live_data: &HashMap<usize, Box<dyn Logical>>,
+    ) -> Response {
+        let response = ui.allocate_rect(
+            Rect::from_min_max(self.line.p1, self.line.p2),
+            Sense::hover(),
+        );
 
         //if wire is connected, update the line's end points to be the current source -> destination positions
-        if self.connected {
-            
-        }
+        if self.connected {}
         // Draw the wire line
-        ui.painter().line_segment([self.line.p1, self.line.p2], Stroke::new(LINE_THICKNESS, self.line.color));
+        ui.painter().line_segment(
+            [self.line.p1, self.line.p2],
+            Stroke::new(LINE_THICKNESS, self.line.color),
+        );
 
         response
     }
-
 }
 
 impl Default for Wire {

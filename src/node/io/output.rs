@@ -1,14 +1,15 @@
 use super::*;
 
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::error::Error;
-
+use std::hash::Hash;
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Output {
     pub id: usize,
+    pub index: usize, // index of the output in the parent gate
+
     pub name: Option<String>,
     pub parent_id: Option<usize>, // Optional parent gate, if this output belongs to a gate
     pub signal: bool,
@@ -17,12 +18,13 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn new(parent_id: usize) -> Self {
+    pub fn new(parent_id: usize, index: usize) -> Self {
         let n = MyApp::next_id();
         Output {
             id: n,
             parent_id: Some(parent_id),
             name: None,
+            index,
             signal: false,
 
             out_wire_ids: Vec::new(), // Initialize with an empty vector
@@ -33,7 +35,7 @@ impl Output {
         self.name = Some(name);
     }
 
-   pub fn get_position(
+    pub fn get_position(
         &self,
         opt_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Result<Pos2, Box<dyn std::error::Error>> {
@@ -45,8 +47,8 @@ impl Output {
             if let Some(parent) = parent_gen {
                 if let Some(gp) = parent.as_any().downcast_ref::<Gate>() {
                     let pos = gp.get_position().unwrap();
-                    //search parent.ins for which input this is
-                    let index = gp.outs.iter().position(|i| *i == self.id).unwrap_or(0);
+                    //search parent.ins for which output this is
+                    let index = gp.outs.iter().position(|(i, _)| *i == self.id).unwrap_or(0);
                     let spacing = 30.0; // Vertical spacing between outputs
 
                     let y_offset = (index as f32 - (gp.n_out as f32 - 1.0) / 2.0) * spacing;
@@ -86,17 +88,30 @@ impl Output {
 }
 
 impl Logical for Output {
-    fn tick(self) {
-        //on tick outputs will update all their out wires to true
-        // for mut id in self.out_wire_ids {
-        //     if self.signal {
-        //         wire.on();
-        //     } else {
-        //         wire.off();
-        //     }
-        // }
+    fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
+        //output is updated by the gate it belongs to so just return a single output with the current signal state
+        if ins.len() > 1 {
+            return Err(Box::new(InvalidOperationError));
+        }
+        if ins.is_empty() {
+            return Ok(HashMap::from([(self.id, false)])); // If no inputs, return false
+        }
+        //for every wire connected to this output, return the signal
+        if self.out_wire_ids.is_empty() {
+            return Ok(HashMap::new()); // If no wires, return the signal
+        }
+        let mut out_signals = HashMap::new();
+        for wire_id in &self.out_wire_ids {
+            if let Some(wire_signal) = ins.get(wire_id) {
+                out_signals.insert(*wire_id, *wire_signal);
+            } else {
+                return Err("Output signal not found".into());
+            }
+        }
+
+        Ok(out_signals)
     }
-    
+
     fn get_kind(&self) -> Logicals {
         Logicals::IO(IOKind::Output)
     }
@@ -112,13 +127,20 @@ impl Logical for Output {
         Err(Box::new(InvalidOperationError))
     }
 
-    fn show(&self, ui: &mut Ui, click_item: &mut Option<ClickItem>, live_data: &HashMap<usize, Box<dyn Logical>>) -> Response {
+    fn show(
+        &self,
+        ui: &mut Ui,
+        click_item: &mut Option<ClickItem>,
+        live_data: &HashMap<usize, Box<dyn Logical>>,
+    ) -> Response {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            let button_color = if self.signal {
-                Color32::GREEN
+            println!("Showing output: {}, has signal:: {}", self.id, self.signal);
+            let mut button_color = Color32::from_rgb(0, 0, 0); // Default color
+            if let Some(signal) = live_data.get(&self.id).map(|o| o.as_any().downcast_ref::<Output>().map(|o| o.signal)).unwrap_or(false) {
+                if signal{
+                    button_color = Color32::GREEN;
+                }
             } else {
-                Color32::DARK_RED
-            };
 
             let btn = Button::new(">")
                 .fill(button_color)
@@ -134,7 +156,4 @@ impl Logical for Output {
         })
         .response
     }
-
-
-
 }
