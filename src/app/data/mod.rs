@@ -50,8 +50,8 @@ impl Data{
     ///loads primitives from a file that is used in the primitive menu
     ///returns a vector of Primitive
     ///each line in the file should be in the format: name:n_ins:n_outs
-    pub fn load_prims() -> Vec<Primitive> {
-        let mut prims: Vec<Primitive> = Vec::new();
+    pub fn load_prims() -> Vec<PrimitiveTemplate> {
+        let mut prims: Vec<PrimitiveTemplate> = Vec::new();
 
         //read saves directory for each file add a gate to the vector
         let data = std::fs::read_to_string("./saves/primitives").unwrap();
@@ -68,7 +68,7 @@ impl Data{
             let n2 = parts[2].parse::<usize>();
             if let Ok(n1) = n1 {
                 if let Ok(n2) = n2 {
-                    let new_gate = Primitive::from_values(parts[0], n1, n2);
+                    let new_gate = PrimitiveTemplate::from_values(parts[0], n1, n2);
                     prims.push(new_gate);
                 }
             }
@@ -79,8 +79,8 @@ impl Data{
 
     ///loads saved chips from the saves directory
     ///returns a vector of Primitive right now but this NEEDS to be changed to a vector of Gate(Custom)
-    pub fn load_chips() -> Vec<Primitive> {
-        let gates = Vec::<Primitive>::new();
+    pub fn load_chips() -> Vec<PrimitiveTemplate> {
+        let gates = Vec::<PrimitiveTemplate>::new();
 
         //read saves directory for each file add a gate to the vector
         let dir = std::fs::read_dir("./saves").unwrap();

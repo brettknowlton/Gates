@@ -105,28 +105,28 @@ impl Logical for Input {
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn Error>> {
-        println!("Setting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead");
+        println!(
+            "Setting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead"
+        );
         // Inputs do not have a position, so we return an error
         Err(Box::new(InvalidOperationError))
     }
 
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
-        println!("Getting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead");
+        println!(
+            "Getting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead"
+        );
         Err(Box::new(InvalidOperationError))
     }
 
     fn show(
         &self,
         ui: &mut Ui,
-        on_output_click: &mut Option<ClickItem>,
+        sender: Sender<UiEvent>,
         _live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response {
         ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-            let button_color = if self.signal {
-                HI_COLOR
-            } else {
-                LO_COLOR
-            };
+            let button_color = if self.signal { HI_COLOR } else { LO_COLOR };
 
             let btn = Button::new("<")
                 .fill(button_color)
@@ -136,11 +136,11 @@ impl Logical for Input {
                 let cursor_pos = ui
                     .ctx()
                     .input(|i| i.pointer.hover_pos().unwrap_or_default());
-                *on_output_click = Some(ClickItem {
-                    item_id: self.id,
-                    screen_position: cursor_pos,
-                    item_type: LogicalKind::IO(IOKind::Input),
-                });
+                sender
+                    .try_send(UiEvent::ClickedIO(self.id, cursor_pos))
+                    .unwrap_or_else(|_| {
+                        println!("Failed to send ClickedIO event");
+                    });
             }
         })
         .response

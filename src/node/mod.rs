@@ -8,12 +8,12 @@ mod wire;
 pub use wire::Wire;
 
 mod primitive;
-pub use primitive::{Primitive, PrimitiveKind};
+pub use primitive::{PrimitiveTemplate, PrimitiveKind};
 
 mod io;
 pub use io::{IOKind, Input, Io, Output};
 
-pub use super::app::ClickItem;
+pub use super::app::UiEvent;
 pub use eframe::egui::{
     Button, Color32, Direction, Layout, Pos2, Response, Sense, Ui, Widget, vec2,
 };
@@ -28,7 +28,7 @@ use std::error::Error;
 const LINE_THICKNESS: f32 = 3.0;
 const LINE_DEFAULT_COLOR: Color32 = Color32::from_rgb(0, 0, 0);
 
-//yellow for hi, dark gray for lo
-const HI_COLOR: Color32 = Color32::from_rgb(255, 255, 0);
-const LO_COLOR: Color32 = Color32::from_rgb(64, 64, 64);
+//dark red for lo, dark green for hi
+const HI_COLOR: Color32 = Color32::from_rgb(0, 127, 0);
+const LO_COLOR: Color32 = Color32::from_rgb(127, 0, 0);
 

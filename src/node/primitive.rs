@@ -2,46 +2,46 @@ use super::*;
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Hash, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct Primitive {
+pub struct PrimitiveTemplate {
     pub label: String,
-    pub kind: GateKind,
+    pub kind: PrimitiveKind,
     pub n_ins: usize,
     pub n_outs: usize,
 }
 
-impl Primitive {
-    pub fn from_values(label: &str, num_inputs: usize, num_outputs: usize) -> Primitive {
-        let kind: GateKind;
+impl PrimitiveTemplate {
+    pub fn from_values(label: &str, num_inputs: usize, num_outputs: usize) -> PrimitiveTemplate {
+        let kind: PrimitiveKind;
         match label {
             "HI-SIGNAL" => {
-                kind = GateKind::Primitive(PrimitiveKind::HISIGNAL); // Assuming HI-SIGNAL is a type of pulse
+                kind = PrimitiveKind::HISIGNAL; // Assuming HI-SIGNAL is a type of pulse
             }
             "LO-SIGNAL" => {
-                kind = GateKind::Primitive(PrimitiveKind::LOSIGNAL); // Assuming LO-SIGNAL is a type of pulse
+                kind = PrimitiveKind::LOSIGNAL; // Assuming LO-SIGNAL is a type of pulse
             }
             "PULSE" => {
-                kind = GateKind::Primitive(PrimitiveKind::PULSE);
+                kind = PrimitiveKind::PULSE;
             }
             "LIGHT" => {
-                kind = GateKind::Primitive(PrimitiveKind::LIGHT);
+                kind = PrimitiveKind::LIGHT;
             }
             "BUFFER" => {
-                kind = GateKind::Primitive(PrimitiveKind::BUFFER);
+                kind = PrimitiveKind::BUFFER;
             }
             "NOT" => {
-                kind = GateKind::Primitive(PrimitiveKind::NOT);
+                kind = PrimitiveKind::NOT;
             }
             "OR" => {
-                kind = GateKind::Primitive(PrimitiveKind::OR);
+                kind = PrimitiveKind::OR;
             }
             "AND" => {
-                kind = GateKind::Primitive(PrimitiveKind::AND);
+                kind = PrimitiveKind::AND;
             }
             _ => {
-                kind = GateKind::Primitive(PrimitiveKind::None);
+                kind = PrimitiveKind::None;
             }
         }
-        let var = Primitive {
+        let var = PrimitiveTemplate {
             label: label.to_string(),
             n_ins: num_inputs,
             n_outs: num_outputs,
@@ -72,11 +72,14 @@ pub enum PrimitiveKind {
     HISIGNAL,
     LOSIGNAL,
     PULSE,
+    TOGGLE,
     LIGHT,
     BUFFER,
     NOT,
     OR,
     AND,
+    XOR,
+    NAND,
 }
 
 impl PrimitiveKind {
@@ -117,6 +120,7 @@ impl PrimitiveKind {
             PrimitiveKind::LIGHT => {
                 // LIGHT has no outputs, for example, always outputs empty map
                 gate.state = ins.values().next().cloned().unwrap_or(false); // Set gate state based on input
+                // ctx.request_repaint();
                 Ok(HashMap::new())
             }
             PrimitiveKind::PULSE => {
@@ -131,6 +135,17 @@ impl PrimitiveKind {
                     Ok(HashMap::from([(*out_id, false)])) // Assuming single output at index 0
                 }
             }
+            PrimitiveKind::TOGGLE => {
+                // pretty much the same as PULSE but doesnt reset its own state
+                let (out_id, _) = gate.outs.iter().next().expect("TOGGLE was ticked but did not have an output");
+                if let Some((_, signal)) = ins.iter().next() {
+                    gate.state = *signal; // Set gate state based on input
+                    Ok(HashMap::from([(*out_id, gate.state)])) // Assuming single output at index 0
+                } else {
+                    return Err("Input signal not found".into());
+                }
+            }
+
             PrimitiveKind::NOT => {
                 // NOT logic, inverts the input signal
                 let (out_id, _) = gate.outs.iter().next().expect("NOT was ticked but did not have an output"); //get the  id of the (only) output
@@ -140,18 +155,30 @@ impl PrimitiveKind {
                     return Err("Input signal not found".into());
                 }
             }
+            PrimitiveKind::OR => {
+                // OR logic, returns true if any input is true
+                let (out_id, _) = gate.outs.iter().next().expect("OR was ticked but did not have an output"); //get the  id of the (only) output
+                let result = ins.values().any(|&v| v);
+                gate.state = result; // Set gate state based on input
+                Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
+            }
 
             _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
         }
     }
 
-
+    pub fn get_gate_kind(&self) -> GateKind {
+        GateKind::Primitive(self.clone())
+    }
+    pub fn get_logical_kind(&self) ->LogicalKind{
+        LogicalKind::Gate(self.get_gate_kind())
+    }
     fn get_n_desired_inputs(&self) -> usize {
         match self {
-            PrimitiveKind::HISIGNAL | PrimitiveKind::LOSIGNAL | PrimitiveKind::PULSE => 0,
+            PrimitiveKind::HISIGNAL | PrimitiveKind::LOSIGNAL | PrimitiveKind::PULSE | PrimitiveKind::TOGGLE => 0,
             PrimitiveKind::LIGHT => 1,
             PrimitiveKind::BUFFER | PrimitiveKind::NOT => 1,
-            PrimitiveKind::OR | PrimitiveKind::AND => 2,
+            PrimitiveKind::OR | PrimitiveKind::AND | PrimitiveKind::XOR | PrimitiveKind::NAND => 2,
             PrimitiveKind::None => 0, // Default case
         }
     }
@@ -164,11 +191,14 @@ impl Display for PrimitiveKind {
             PrimitiveKind::HISIGNAL => write!(f, "HI-SIGNAL"),
             PrimitiveKind::LOSIGNAL => write!(f, "LO-SIGNAL"),
             PrimitiveKind::PULSE => write!(f, "PULSE"),
+            PrimitiveKind::TOGGLE => write!(f, "TOGGLE"),
             PrimitiveKind::LIGHT => write!(f, "LIGHT"),
             PrimitiveKind::BUFFER => write!(f, "BUFFER"),
             PrimitiveKind::NOT => write!(f, "NOT"),
             PrimitiveKind::OR => write!(f, "OR"),
             PrimitiveKind::AND => write!(f, "AND"),
+            PrimitiveKind::XOR => write!(f, "XOR"),
+            PrimitiveKind::NAND => write!(f, "NAND"),
         }
     }
 }

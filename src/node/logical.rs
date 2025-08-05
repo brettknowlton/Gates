@@ -1,3 +1,8 @@
+use crossbeam::channel::Sender;
+use serde::{Deserialize, Serialize};
+
+use crate::UiEvent;
+
 use super::*;
 
 pub trait Logical: AsAny {
@@ -13,13 +18,11 @@ pub trait Logical: AsAny {
         Err(Box::new(InvalidOperationError))
     }
     fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>>;
-
     fn get_kind(&self) -> LogicalKind;
-
     fn show(
         &self,
         ui: &mut Ui,
-        click_item: &mut Option<ClickItem>,
+        sender: Sender<UiEvent>,
         live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response;
     fn click_on(&mut self) {
@@ -47,14 +50,45 @@ impl<T: Logical + 'static> AsAny for T {
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum LogicalKind {
     Gate(GateKind),
     Wire,
     IO(IOKind),
 }
+impl LogicalKind {
+    pub fn is_gate(&self) -> bool {
+        matches!(self, LogicalKind::Gate(_))
+    }
+    pub fn is_primitive(&self) -> bool {
+        matches!(self, LogicalKind::Gate(GateKind::Primitive(_)))
+    }
+    pub fn is_primitive_kind(&self, kind: PrimitiveKind) -> bool {
+        if let LogicalKind::Gate(GateKind::Primitive(primitive_kind)) = self {
+            *primitive_kind == kind
+        } else {
+            false
+        }
+    }
 
-#[derive(Debug)]
+    pub fn is_wire(&self) -> bool {
+        matches!(self, LogicalKind::Wire)
+    }
+    pub fn is_io(&self) -> bool {
+        matches!(self, LogicalKind::IO(_))
+    }
+
+    pub fn as_gate(&self) -> Result<GateKind, Box<dyn Error>> {
+        if let LogicalKind::Gate(gate_kind) = self {
+            Ok(gate_kind.clone())
+        } else {
+            Err("Not a gate kind".into())
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct InvalidOperationError;
 impl Error for InvalidOperationError {}
 impl Display for InvalidOperationError {

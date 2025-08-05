@@ -133,7 +133,7 @@ impl Logical for Output {
     fn show(
         &self,
         ui: &mut Ui,
-        click_item: &mut Option<ClickItem>,
+        sender: Sender<UiEvent>,
         live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
@@ -148,11 +148,11 @@ impl Logical for Output {
                 .fill(button_color)
                 .min_size(vec2(18.0, 18.0));
 
+            let mouse_pos = ui.ctx().input(|i| i.pointer.hover_pos());
+
             if ui.add(btn).clicked() {
-                *click_item = Some(ClickItem {
-                    item_id: self.id,
-                    screen_position: self.get_position(live_data).unwrap(),
-                    item_type: LogicalKind::IO(IOKind::Output),
+                sender.try_send(UiEvent::ClickedIO(self.id, mouse_pos.unwrap())).unwrap_or_else(|_| {
+                    println!("Failed to send ClickedIO event");
                 });
             }
         })

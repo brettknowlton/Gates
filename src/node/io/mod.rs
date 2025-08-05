@@ -3,11 +3,13 @@ pub mod output;
 pub use output::Output;
 mod input;
 pub use input::Input;
+use serde::{Deserialize, Serialize};
 
-pub use crate::{ MyApp, node::InvalidOperationError};
+pub use crate::{ MyApp, node::InvalidOperationError, UiEvent};
 
 pub use eframe::egui::{Align};
 
+pub use crossbeam::channel::Sender;
 
 pub trait Io: Logical + AsAny {
     fn get_position(
@@ -19,7 +21,7 @@ pub trait Io: Logical + AsAny {
 
 
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IOKind {
     Input,
     Output,

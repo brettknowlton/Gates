@@ -1,8 +1,9 @@
-use crate::MyApp;
+use crate::{MyApp, UiEvent};
 use crate::node::io::*;
 
 use super::*;
 
+use crossbeam::channel::Sender;
 use eframe::egui::{Align, Align2, Layout, Rect, Stroke, TextStyle, Ui, Vec2, pos2};
 use eframe::egui::{Color32, Pos2, StrokeKind, UiBuilder};
 
@@ -54,7 +55,7 @@ impl Logical for Gate {
     fn show(
         &self,
         ui: &mut Ui,
-        click_item: &mut Option<ClickItem>,
+        sender: Sender<UiEvent>,
         live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response {
         let size = Vec2::new(GATE_WIDTH, 50.0);
@@ -113,7 +114,7 @@ impl Logical for Gate {
                         live_data.get(id).map(|input_logical| {
                             if let Some(input) = input_logical.as_any().downcast_ref::<Input>() {
                                 ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                                    input.show(ui, click_item, live_data);
+                                    input.show(ui, sender.clone(), live_data);
                                 });
                             }
                         });
@@ -150,7 +151,7 @@ impl Logical for Gate {
                         live_data.get(&output.0).map(|input_logical| {
                             if let Some(output) = input_logical.as_any().downcast_ref::<Output>() {
                                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                    output.show(ui, click_item, live_data);
+                                    output.show(ui, sender.clone(), live_data);
                                 });
                             }
                         });
@@ -195,7 +196,7 @@ impl Gate {
         }
     }
 
-    fn from_template(t: &Primitive, pos: Pos2) -> Gate {
+    fn from_template(t: &PrimitiveTemplate, pos: Pos2) -> Gate {
         let g = Gate {
             label: t.label.clone(),
             id: MyApp::next_id(),
@@ -207,7 +208,7 @@ impl Gate {
             n_out: t.n_outs as usize,
             outs: HashMap::new(),
 
-            kind: t.kind.clone(),
+            kind: t.kind.get_gate_kind(),
             state: false,
         };
         g
@@ -225,30 +226,30 @@ impl Gate {
         print!("Creating gate from template ID: {:?}", t);
         let new_gate = match t {
             GateKind::Primitive(PrimitiveKind::HISIGNAL) => {
-                Gate::from_template(&Primitive::from_values("HI-SIGNAL", 0, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("HI-SIGNAL", 0, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::LOSIGNAL) => {
-                Gate::from_template(&Primitive::from_values("LO-SIGNAL", 0, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("LO-SIGNAL", 0, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::PULSE) => {
-                Gate::from_template(&Primitive::from_values("PULSE", 0, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("PULSE", 0, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::LIGHT) => {
-                Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("LIGHT", 1, 0), pos)
             }
             GateKind::Primitive(PrimitiveKind::BUFFER) => {
-                Gate::from_template(&Primitive::from_values("BUFFER", 1, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("BUFFER", 1, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::NOT) => {
-                Gate::from_template(&Primitive::from_values("NOT", 1, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("NOT", 1, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::OR) => {
-                Gate::from_template(&Primitive::from_values("OR", 2, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("OR", 2, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::AND) => {
-                Gate::from_template(&Primitive::from_values("AND", 2, 1), pos)
+                Gate::from_template(&PrimitiveTemplate::from_values("AND", 2, 1), pos)
             }
-            _ => Gate::from_template(&Primitive::from_values("E: Not Found", 1, 1), pos),
+            _ => Gate::from_template(&PrimitiveTemplate::from_values("E: Not Found", 1, 1), pos),
         };
 
         println!("Created gate: {:?}", new_gate);

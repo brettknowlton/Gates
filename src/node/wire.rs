@@ -1,6 +1,7 @@
 use super::*;
 
-use crate::MyApp;
+use crate::{MyApp, UiEvent};
+use crossbeam::channel::Sender;
 use eframe::{egui::{Rect, Stroke}};
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
@@ -125,7 +126,7 @@ impl Logical for Wire {
     fn show(
         &self,
         ui: &mut Ui,
-        _on_output_click: &mut Option<ClickItem>,
+        _sender: Sender<UiEvent>,
         _live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response {
         let response = ui.allocate_rect(
@@ -134,9 +135,9 @@ impl Logical for Wire {
         );
 
         let color = if self.signal {
-            Color32::from_rgb(0, 255, 0) // Green if signal is on
+            HI_COLOR
         } else {
-            LINE_DEFAULT_COLOR // Default color if signal is off
+            LO_COLOR
         };
         //if wire is connected, update the line's end points to be the current source -> destination positions
         if self.connected {}

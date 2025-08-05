@@ -1,5 +1,6 @@
 use super::node::*;
 mod ui_util;
+use crossbeam::channel::{Receiver, Sender};
 pub use ui_util::ClickItem;
 
 mod pan_area;
@@ -13,7 +14,7 @@ use std::path::PathBuf;
 
 use eframe::{
     self,
-    egui::{Pos2, Ui, UiBuilder},
+    egui::{Context, Pos2, Ui, UiBuilder},
     *,
 };
 
@@ -25,9 +26,6 @@ const SIDE_PANEL_WIDTH: f32 = 400.0;
 
 static mut NEXT_ID: usize = 0; // static variable to generate unique ids for gates and wires
 
-
-
-
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct MyApp {
@@ -38,8 +36,8 @@ pub struct MyApp {
     value: f32,
 
     files_loaded: bool,
-    prims: Vec<Primitive>,
-    saved: Vec<Primitive>,
+    prim_templates: Vec<PrimitiveTemplate>,
+    saved: Vec<PrimitiveTemplate>,
 
     current_chip: Option<PathBuf>,
 
@@ -48,24 +46,35 @@ pub struct MyApp {
 
     pan_center: Pos2,
     pan_area_rect: Option<egui::Rect>,
-    dragging_kind: Option<GateKind>,
+
     pub dragging_gate: Option<usize>,
-    pub clicked_gate: Option<usize>, // the gate that is currently being clicked on
+    pub dragging_kind: Option<LogicalKind>, // kind of primitive we are dragging, if any
+
+    pub holding_wire: Option<usize>, //id of the wire we are currently holding
 
     #[serde(skip)]
-    pub click_item: Option<ClickItem>,
-    pub holding_wire: Option<usize>, //id of the wire we are currently holding
+    pub event_sender: Sender<UiEvent>,
+    #[serde(skip)]
+    pub event_receiver: Receiver<UiEvent>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub enum UiEvent {
+    ClickedGate(usize, Pos2), // id of the gate that was clicked
+    ClickedWire(usize, Pos2), // id of the wire that was clicked
+    ClickedIO(usize, Pos2),   // id of clicked input or output
 }
 
 impl Default for MyApp {
     fn default() -> Self {
+        let (event_sender, event_receiver) = crossbeam::channel::unbounded();
         Self {
             // Example stuff:
             label: "Hello World!".to_owned(),
             value: 2.7,
             files_loaded: false,
 
-            prims: Vec::new(),
+            prim_templates: Vec::new(),
             saved: Vec::new(),
 
             current_chip: None,
@@ -73,13 +82,13 @@ impl Default for MyApp {
 
             pan_center: Pos2::new(0.0, 0.0),
             pan_area_rect: None,
-            dragging_kind: None,
 
             dragging_gate: None,
-            clicked_gate: None,
+            dragging_kind: None, // No primitive kind being dragged initially
+            holding_wire: None,  // No wire being held initially
 
-            click_item: None,
-            holding_wire: None,
+            event_sender,
+            event_receiver,
         }
     }
 }
@@ -87,7 +96,8 @@ impl Default for MyApp {
 impl MyApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let new: Self;
+        let (event_sender, event_receiver) = crossbeam::channel::unbounded();
+        let mut new: Self;
         if let Some(_) = cc.storage {
             new = Default::default();
             // eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
@@ -95,15 +105,17 @@ impl MyApp {
             new = Default::default();
         }
 
-        new.gates_setup()
+        new.event_sender = event_sender;
+        new.event_receiver = event_receiver;
+        new.load_data()
     }
 
-    fn gates_setup(mut self) -> Self {
+    fn load_data(mut self) -> Self {
         self.saved = data::Data::load_chips();
         println!("Loaded chips: {}", self.saved.len());
 
-        self.prims = data::Data::load_prims();
-        println!("Loaded prims: {}", self.prims.len());
+        self.prim_templates = data::Data::load_prims();
+        println!("Loaded prims: {}", self.prim_templates.len());
 
         self.files_loaded = true;
         self
@@ -119,17 +131,12 @@ impl MyApp {
     fn update_wire_positions(&mut self, ui: &mut Ui, pan_center: Pos2) {
         //loop live data and collect all inputs and outputs into one HashMap and Wires into another
 
+        // iterate all gates' inputs and outputs and collect their (id, positions)
         let gates: HashMap<usize, Pos2> = self
             .live_data
             .iter()
             .filter_map(|(id, item)| {
                 if let Some(input) = item.as_any().downcast_ref::<Input>() {
-                    // println!(
-                    //     "Input found: {:?} at position {:?} with parent: {:?}",
-                    //     input,
-                    //     input.get_position(&self.live_data),
-                    //     input.parent_id
-                    // );
                     Some((*id, input.get_position(&self.live_data).unwrap()))
                 } else if let Some(output) = item.as_any().downcast_ref::<Output>() {
                     Some((*id, output.get_position(&self.live_data).unwrap()))
@@ -140,13 +147,13 @@ impl MyApp {
             .collect();
         println!("Found {} gates", gates.len());
 
-        // Now iterate mutably to update wires, using only the data collected above
+
+        // Now iterate mutably through each IO item, update all connected wires using only the data collected above
         for (_id, wire) in self.live_data.iter_mut() {
             if let Some(w) = wire.as_any_mut().downcast_mut::<Wire>() {
-                if w.id == self.holding_wire.unwrap_or(usize::MAX) {
-                    // If this wire is the one we are currently holding, update its positions
-                    // If the wire is being dragged, set p2 to the cursor position
-                    println!("Detected a wire being dragged: {:?}", w.id);
+
+                if w.id == self.holding_wire.unwrap_or(usize::MAX) {// if we are looking at the currently held wire:
+                    // set p2 to the cursor position
                     if let Some(cursor_pos) = ui.input(|i| i.pointer.hover_pos()) {
                         w.set_p2(cursor_pos);
                     }
@@ -155,7 +162,6 @@ impl MyApp {
                         w.set_p1(*source_pos);
                     }
                 }
-
 
                 if w.connected {
                     if let Some(source_pos) = gates.get(&w.source_id) {
@@ -168,13 +174,12 @@ impl MyApp {
                         dest_pos_moved = dest_pos_moved - pan_center.to_vec2();
                         w.set_positions(source_pos_moved, dest_pos_moved);
                     }
-                } else {
                 }
             }
         }
     }
 
-    fn update_logicals(&mut self) {
+    fn update_logicals(&mut self, ctx: &Context) {
         // Update the logical states of all gates and wires
 
         let mut pre_gates = HashMap::new();
@@ -241,6 +246,7 @@ impl MyApp {
                 //tick the gate with the inputs and collect what we want to send to outputs
 
                 //HashMap<usize: id of an output, bool: desired state of that output
+                ctx.request_repaint(); // Request a repaint before ticking the gate
                 changed_outputs.extend(gate.tick(cleared_ins.clone()).unwrap_or(HashMap::new()));
             }
 
@@ -297,73 +303,102 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
 
-        //check if output_click exists, if so, call the function
-        if let Some(clicked_io) = &self.click_item {
+        // determine outputs for all logicals based on their inputs and their TERM
+        self.update_logicals(ctx);
+
+        if let Ok(clicked) = self.event_receiver.try_recv() {
             // an output was clicked, so we want to create a wire if we are not currently holding a wire
             //lookup the type of the clicked IO by its id in the live_data map
-            match clicked_io.item_type {
-                LogicalKind::IO(IOKind::Input) => {
-                    println!("Clicked on Input: {:?}", clicked_io);
-                    //check if this input already has a wire connected
-                    let in_wire_id: Option<usize>= self.live_data.get(&clicked_io.item_id).unwrap().as_any().downcast_ref::<Input>().unwrap().in_wire_id;
-
-                    if in_wire_id.is_none() {
-                        if let Some(wire_id) = self.holding_wire.take() {
-                            //connect the wire to the input
-                            println!("Connecting wire to input: {:?}", clicked_io);
-                            self.holding_wire = None;
-                            let wire= self.live_data.get_mut(&wire_id).unwrap().as_any_mut().downcast_mut::<Wire>().unwrap();
-                            //set wire's p2 to the clicked position
-                            // and set the wires destination to the input's id
-                            // wire.set_p2(clicked_io.screen_position);
-                            wire.dest = Some(clicked_io.item_id);
-                            wire.connected = true; // mark the wire as connected
-
-
-                            self.live_data.get_mut(&clicked_io.item_id).unwrap().as_any_mut().downcast_mut::<Input>().unwrap().in_wire_id = Some(wire_id);
-
-                        } else {
-                            println!("No wire to connect to input, holding_wire is None");
-                        }
-                        
-                    }
-        
-                }
-                LogicalKind::IO(IOKind::Output) => {
-                    println!("Clicked on Output: {:?}", clicked_io);
-                    if self.holding_wire.is_none() {
-                        println!("Creating wire from clicked IO: {:?}", clicked_io);
-                        let new_wire= Wire::from_io(
-                            clicked_io.item_id,
-                            clicked_io.screen_position,
-                        );
-                        self.holding_wire = Some(new_wire.id);
-                        self.live_data.insert(new_wire.id, new_wire);
-
-                    } else {
-                        //reconnect the wire using this output as the new source
-                        if let Some(wire_id) = self.holding_wire.take() {
-                            println!("Reconnecting wire to output: {:?}", clicked_io);
-                        let wire= self.live_data.get_mut(&wire_id).unwrap().as_any_mut().downcast_mut::<Wire>().unwrap();
-
-                            wire.source_id = clicked_io.item_id;
-                            wire.set_p1(clicked_io.screen_position);
-                        } else {
-                            println!("No wire to reconnect, holding_wire is None");
+            match clicked {
+                UiEvent::ClickedGate(id, _) => {
+                    // If a gate was clicked, toggle its state
+                    if let Some(item) = self.live_data.get_mut(&id) {
+                        if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
+                            println!("Clicked on Gate: {:?}", id);
+                            gate.click_on();
                         }
                     }
                 }
-                _ => {
-                    println!("Clicked on unknown IO type: {:?}", clicked_io);
+                UiEvent::ClickedIO(id, pos) => {
+                    let kind = self.live_data.get(&id).unwrap().get_kind();
+
+                    match kind {
+                        LogicalKind::IO(IOKind::Input) => {
+                            println!("Clicked on Input: {:?}", kind);
+                            //check if this input already has a wire connected
+                            let in_wire_id: Option<usize> = self
+                                .live_data
+                                .get(&id)
+                                .unwrap()
+                                .as_any()
+                                .downcast_ref::<Input>()
+                                .unwrap()
+                                .in_wire_id;
+
+                            if in_wire_id.is_none() {
+                                if let Some(wire_id) = self.holding_wire.take() {
+                                    //connect the wire to the input
+                                    println!("Connecting wire to input: {:?}", kind);
+                                    self.holding_wire = None;
+                                    let wire = self
+                                        .live_data
+                                        .get_mut(&wire_id)
+                                        .unwrap()
+                                        .as_any_mut()
+                                        .downcast_mut::<Wire>()
+                                        .unwrap();
+                                    //set wire's p2 to the clicked position
+                                    // and set the wires destination to the input's id
+                                    // wire.set_p2(clicked_io.screen_position);
+                                    wire.dest = Some(id);
+                                    wire.connected = true; // mark the wire as connected
+
+                                    self.live_data
+                                        .get_mut(&id)
+                                        .unwrap()
+                                        .as_any_mut()
+                                        .downcast_mut::<Input>()
+                                        .unwrap()
+                                        .in_wire_id = Some(wire_id);
+                                } else {
+                                    println!("No wire to connect to input, holding_wire is None");
+                                }
+                            }
+                        }
+                        LogicalKind::IO(IOKind::Output) => {
+                            println!("Clicked on Output: {:?}", id);
+                            if self.holding_wire.is_none() {
+                                println!("Creating wire from clicked IO: {:?}", id);
+                                let new_wire = Wire::from_io(id, pos);
+                                self.holding_wire = Some(new_wire.id);
+                                self.live_data.insert(new_wire.id, new_wire);
+                            } else {
+                                //reconnect the wire using this output as the new source
+                                if let Some(wire_id) = self.holding_wire.take() {
+                                    println!("Reconnecting wire to output: {:?}", id);
+                                    let wire = self
+                                        .live_data
+                                        .get_mut(&wire_id)
+                                        .unwrap()
+                                        .as_any_mut()
+                                        .downcast_mut::<Wire>()
+                                        .unwrap();
+
+                                    wire.source_id = id;
+                                    wire.set_p1(pos);
+                                } else {
+                                    println!("No wire to reconnect, holding_wire is None");
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("Clicked on unknown IO type: {:?}", id);
+                        }
+                    }
                 }
+                UiEvent::ClickedWire(_, _) => {}
             }
-
-            // Clear the click item after processing
-            self.click_item = None;
         }
-
-        // determine outputs for all logicals based on their inputs and their TERM
-        self.update_logicals();
 
         egui::SidePanel::left("Tools").show(ctx, |ui| {
             ui.set_min_width(SIDE_PANEL_WIDTH);
@@ -373,7 +408,7 @@ impl eframe::App for MyApp {
                 //display all saved gates in a vertical list
                 // Add a button to create a new gate
                 if ui.button("New Chip").clicked() {
-                    let new_chip = Primitive::from_values("New Chip", 0, 0);
+                    let new_chip = PrimitiveTemplate::from_values("New Chip", 0, 0);
                     self.saved.push(new_chip);
                     data::Data::save_chip(&self.live_data);
                 };
@@ -433,45 +468,50 @@ impl eframe::App for MyApp {
 
             // println!("Primitive gates: {:?}", self.primitive_gates);
             ui.horizontal_centered(|ui| {
-                dnd(ui, "Primitive").show_vec(&mut self.prims, |ui, item, handle, _state| {
-                    handle.ui(ui, |ui| {
-                        let w = ui.add(item.make_toolbox_widget());
-                        if w.is_pointer_button_down_on() {
-                            self.dragging_kind = Some(item.kind.clone());
-                            println!("Dragging kind: {:?}", self.dragging_kind);
-                        } else if ui.input(|i| i.pointer.any_released()) {
-                            if let Some(kind) = &self.dragging_kind {
-                                // Check if pointer is over the PanArea
-                                if let Some(pointer_pos) = ctx.pointer_hover_pos() {
-                                    if let Some(pan_area_rect) = self.pan_area_rect {
-                                        if pan_area_rect.contains(pointer_pos) {
-                                            println!("Pointer is over PanArea, adding gate");
-                                            let world_pos = pointer_pos + self.pan_center.to_vec2();
-                                            let mut gate = Gate::create_gate_from_template(
-                                                kind.clone(),
-                                                world_pos,
-                                            );
+                dnd(ui, "Primitive").show_vec(
+                    &mut self.prim_templates,
+                    |ui, item, handle, _state| {
+                        handle.ui(ui, |ui| {
+                            let w = ui.add(item.make_toolbox_widget());
+                            if w.is_pointer_button_down_on() {
+                                self.dragging_kind = Some(item.kind.get_logical_kind());
+                            } else if ui.input(|i| i.pointer.any_released()) {
+                                if let Some(kind) = &self.dragging_kind {
+                                    // Check if pointer is over the PanArea
+                                    if let Some(pointer_pos) = ctx.pointer_hover_pos() {
+                                        if let Some(pan_area_rect) = self.pan_area_rect {
+                                            if pan_area_rect.contains(pointer_pos) {
+                                                println!("Pointer is over PanArea, adding gate");
+                                                let world_pos = pointer_pos + self.pan_center.to_vec2();
+                                                let mut gate = Gate::create_gate_from_template(
+                                                    kind.as_gate().unwrap(),
+                                                    world_pos,
+                                                );
 
-                                            gate.create_io(&mut self.live_data);
+                                                gate.create_io(&mut self.live_data);
 
-                                            self.live_data.insert(
-                                                // Create a new gate at the world position
-                                                gate.id,
-                                                Box::new(gate),
-                                            );
+                                                self.live_data.insert(
+                                                    // Create a new gate at the world position
+                                                    gate.id,
+                                                    Box::new(gate),
+                                                );
 
-                                            println!("Added new gate: {:?}", self.dragging_kind);
-                                            println!("Mouse position: {:?}", pointer_pos);
-                                            println!("World position: {:?}", world_pos);
-                                            println!("Pan center: {:?}", self.pan_center);
+                                                println!(
+                                                    "Added new gate: {:?}",
+                                                    self.dragging_kind
+                                                );
+                                                println!("Mouse position: {:?}", pointer_pos);
+                                                println!("World position: {:?}", world_pos);
+                                                println!("Pan center: {:?}", self.pan_center);
+                                            }
                                         }
                                     }
                                 }
+                                self.dragging_kind = None;
                             }
-                            self.dragging_kind = None;
-                        }
-                    });
-                });
+                        });
+                    },
+                );
             });
         });
 
@@ -516,7 +556,7 @@ impl eframe::App for MyApp {
                                     ui.scope_builder(builder, |ui| {
                                         let response = pan_item.show(
                                             ui,
-                                            &mut self.click_item,
+                                            self.event_sender.clone(),
                                             &self.live_data,
                                         );
                                         if response.drag_started()
@@ -531,11 +571,16 @@ impl eframe::App for MyApp {
 
                                         if response.clicked() {
                                             //if the item was a gate (should always be), set the clicked_gate to this id
-                                            if let Some(_) =
-                                                pan_item.as_any().downcast_ref::<Gate>()
-                                            {
-                                                self.clicked_gate = Some(i);
-                                            }
+                                            self.event_sender
+                                                .try_send(UiEvent::ClickedGate(
+                                                    i,
+                                                    ui.ctx().input(|i| {
+                                                        i.pointer.hover_pos().unwrap_or_default()
+                                                    }),
+                                                ))
+                                                .unwrap_or(println!(
+                                                    "Failed to send ClickedGate event"
+                                                ));
                                         }
                                     })
                                     .response
@@ -547,7 +592,11 @@ impl eframe::App for MyApp {
                                     let builder = UiBuilder::new(); //.max_rect(rect);
 
                                     ui.scope_builder(builder, |ui| {
-                                        pan_item.show(ui, &mut self.click_item, &self.live_data);
+                                        pan_item.show(
+                                            ui,
+                                            self.event_sender.clone(),
+                                            &self.live_data,
+                                        );
                                     })
                                     .response
                                 }
@@ -577,32 +626,11 @@ impl eframe::App for MyApp {
                             }
                         }
                     }
-
-                    if self.clicked_gate.is_some() {
-                        // If a gate was clicked, toggle its state
-                        if let Some(index) = self.clicked_gate {
-                            if let Some(item) = self.live_data.get_mut(&index) {
-                                print!(
-                                    "Gate was clicked: {:?}",
-                                    item.as_any().downcast_ref::<Gate>()
-                                );
-                                if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
-                                    gate.click_on();
-                                }
-                            }
-                        }
-                        self.clicked_gate = None; // reset after clicking
-                    }
                 },
             ));
 
             //refresh all wire positions
             self.update_wire_positions(ui, self.pan_center);
         });
-
-        assert!(
-            self.clicked_gate.is_none(),
-            "clicked_gate should be None after every frame"
-        );
     }
 }
