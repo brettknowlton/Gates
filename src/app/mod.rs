@@ -52,7 +52,7 @@ pub struct MyApp {
 
     #[serde(skip)]
     pub click_item: Option<ClickItem>,
-    pub holding_wire: Option<Box<Wire>>,
+    pub holding_wire: Option<usize>, //id of the wire we are currently holding
 }
 
 impl Default for MyApp {
@@ -141,6 +141,20 @@ impl MyApp {
         // Now iterate mutably to update wires, using only the data collected above
         for (_id, wire) in self.live_data.iter_mut() {
             if let Some(w) = wire.as_any_mut().downcast_mut::<Wire>() {
+                if w.id == self.holding_wire.unwrap_or(usize::MAX) {
+                    // If this wire is the one we are currently holding, update its positions
+                    // If the wire is being dragged, set p2 to the cursor position
+                    println!("Detected a wire being dragged: {:?}", w.id);
+                    if let Some(cursor_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                        w.set_p2(cursor_pos);
+                    }
+                    //set p1 its source input's position
+                    if let Some(source_pos) = gates.get(&w.source_id) {
+                        w.set_p1(*source_pos);
+                    }
+                }
+
+
                 if w.connected {
                     if let Some(source_pos) = gates.get(&w.source_id) {
                         //offset postion with pan area
@@ -153,14 +167,6 @@ impl MyApp {
                         w.set_positions(source_pos_moved, dest_pos_moved);
                     }
                 } else {
-                    //if not connected, p2 will be on the mouse cursor
-                    if let Some(cursor_pos) = ui.input(|i| i.pointer.hover_pos()) {
-                        w.set_p2(cursor_pos);
-                    }
-                    // If not connected, set p1 to the source position
-                    if let Some(source_pos) = gates.get(&w.source_id) {
-                        w.set_p1(*source_pos);
-                    }
                 }
             }
         }
@@ -297,17 +303,16 @@ impl eframe::App for MyApp {
                 LogicalKind::IO(IOKind::Input) => {
                     println!("Clicked on Input: {:?}", clicked_io);
 
-                    if let Some(mut wire) = self.holding_wire.take() {
+                    if let Some(wire_id) = self.holding_wire.take() {
                         //connect the wire to the input
                         println!("Connecting wire to input: {:?}", clicked_io);
                         self.holding_wire = None;
-
+                        let wire= self.live_data.get_mut(&wire_id).unwrap().as_any_mut().downcast_mut::<Wire>().unwrap();
                         //set wire's p2 to the clicked position
                         // and set the wires destination to the input's id
-                        wire.set_p2(clicked_io.screen_position);
+                        // wire.set_p2(clicked_io.screen_position);
                         wire.dest = Some(clicked_io.item_id);
                         wire.connected = true; // mark the wire as connected
-                        self.live_data.insert(wire.id, wire);
                     } else {
                         println!("No wire to connect to input, holding_wire is None");
                     }
@@ -316,14 +321,18 @@ impl eframe::App for MyApp {
                     println!("Clicked on Output: {:?}", clicked_io);
                     if self.holding_wire.is_none() {
                         println!("Creating wire from clicked IO: {:?}", clicked_io);
-                        self.holding_wire = Some(Wire::from_io(
+                        let new_wire= Wire::from_io(
                             clicked_io.item_id,
                             clicked_io.screen_position,
-                        ));
+                        );
+                        self.holding_wire = Some(new_wire.id);
+                        self.live_data.insert(new_wire.id, new_wire);
+
                     } else {
                         //reconnect the wire using this output as the new source
-                        if let Some(mut wire) = self.holding_wire.take() {
+                        if let Some(wire_id) = self.holding_wire.take() {
                             println!("Reconnecting wire to output: {:?}", clicked_io);
+                        let wire= self.live_data.get_mut(&wire_id).unwrap().as_any_mut().downcast_mut::<Wire>().unwrap();
 
                             wire.source_id = clicked_io.item_id;
                             wire.set_p1(clicked_io.screen_position);

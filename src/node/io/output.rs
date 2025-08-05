@@ -139,11 +139,9 @@ impl Logical for Output {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
             let button_color: Color32; // Default color
             if self.signal {
-                button_color = Color32::GREEN;
-                println!("Showing output: {}, has signal:: {}", self.id, self.signal);
+                button_color = HI_COLOR;
             } else {
-                button_color = Color32::RED;
-                println!("Output: {}, has signal:: {}", self.id, self.signal);
+                button_color = LO_COLOR;
             }
 
             let btn = Button::new(">")

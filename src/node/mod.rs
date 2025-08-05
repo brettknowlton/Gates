@@ -28,4 +28,7 @@ use std::error::Error;
 const LINE_THICKNESS: f32 = 3.0;
 const LINE_DEFAULT_COLOR: Color32 = Color32::from_rgb(0, 0, 0);
 
+//yellow for hi, dark gray for lo
+const HI_COLOR: Color32 = Color32::from_rgb(255, 255, 0);
+const LO_COLOR: Color32 = Color32::from_rgb(64, 64, 64);
 

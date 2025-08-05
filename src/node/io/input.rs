@@ -123,9 +123,9 @@ impl Logical for Input {
     ) -> Response {
         ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
             let button_color = if self.signal {
-                Color32::GREEN
+                HI_COLOR
             } else {
-                Color32::DARK_RED
+                LO_COLOR
             };
 
             let btn = Button::new("<")
