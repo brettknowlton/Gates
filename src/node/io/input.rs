@@ -92,7 +92,7 @@ impl Logical for Input {
             return Ok(HashMap::from([(0, false)])); // If no inputs, return false
         }
         //if input is provided, set the signal to the input's value
-        if let Some(signal) = ins.get(&self.parent_id.unwrap_or(0)) {
+        if let Some(signal) = ins.get(&self.id) {
             self.signal = *signal;
         } else {
             return Err("Input signal not found".into());

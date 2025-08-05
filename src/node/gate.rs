@@ -27,7 +27,7 @@ pub struct Gate {
     pub outs: HashMap<usize, bool>, //bool represents the desired output state, this will be passed to the outputs on their tick() function
 
     pub kind: GateType,
-    state: bool,
+    pub state: bool,
 }
 
 impl Logical for Gate {
@@ -61,12 +61,20 @@ impl Logical for Gate {
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
 
         let checkbox_height = ui.spacing().interact_size.y;
+        
+        let mut fill_color: Color32= Color32::GRAY;
+        if self.kind == GateType::Primitive(PrimitiveType::LIGHT) && self.state {
+            fill_color = Color32::WHITE; // White for light on
+        } else {
+            fill_color = Color32::BLACK; // Black for light off
+        }
+
 
         // Draw the bounding box
         ui.painter().rect(
             rect,
             10.0,
-            Color32::from_rgb(30, 30, 30),
+            fill_color,
             Stroke::new(1.0, Color32::GRAY),
             StrokeKind::Middle,
         );

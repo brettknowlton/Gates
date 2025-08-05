@@ -44,7 +44,7 @@ impl Display for InvalidOperationError {
 pub trait Logical: AsAny {
     /// Ticks the logical element, updating its state.
     /// This is where the logic of the element is processed.
-    fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
+    fn tick(&mut self, _: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         // Default implementation, can be overridden by specific logical types
         println!();
         Err("Tick not implemented for this type".into())

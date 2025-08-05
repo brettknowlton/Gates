@@ -315,8 +315,10 @@ impl MyApp {
 
                 for (&input_id, input) in pre_ins.iter() {
                     //find all inputs who's parent_id matches the gate's id
-                    if let Some(input_parent_id) = input.parent_id {//check that input actually has a parent
-                        if input_parent_id == *id {//and that the parent is THIS gate
+                    if let Some(input_parent_id) = input.parent_id {
+                        //check that input actually has a parent
+                        if input_parent_id == *id {
+                            //and that the parent is THIS gate
                             //if the input's parent id matches the gate's id, add it to the cleared inputs
                             cleared_ins.insert(*input_id, input.signal);
                         }
@@ -335,20 +337,24 @@ impl MyApp {
                 let mut desired_wire_changes = HashMap::new();
                 if let Some(item) = pre_outs.get_mut(&output_id) {
                     println!("Ticking output with ID: {}, signal: {}", output_id, signal);
-                    desired_wire_changes.extend(item.tick(HashMap::from([(output_id, signal)]))
-                    .unwrap_or_default());
+                    desired_wire_changes.extend(
+                        item.tick(HashMap::from([(output_id, signal)]))
+                            .unwrap_or_default(),
+                    );
                 }
 
                 //hash map for tracking which wires we
-                let mut desired_input_changes= HashMap::new();
+                let mut desired_input_changes = HashMap::new();
 
                 //tick every wire that has this output as its source_id
                 for (_, wire) in pre_wires.iter_mut() {
                     if wire.source_id == output_id {
                         //tick the wire with the signal
-                    println!("Ticking wire with ID: {}, signal: {}", wire.id, signal);
-                        desired_input_changes.extend(wire.tick(HashMap::from([(output_id.clone(), signal.clone())]))
-                            .unwrap_or_default());
+                        println!("Ticking wire with ID: {}, signal: {}", wire.id, signal);
+                        desired_input_changes.extend(
+                            wire.tick(HashMap::from([(output_id.clone(), signal.clone())]))
+                                .unwrap_or_default(),
+                        );
                     }
                 }
 
@@ -357,7 +363,9 @@ impl MyApp {
                     if let Some(signal) = desired_input_changes.get(input_id) {
                         //tick the input with the signal
                         println!("Ticking input with ID: {}, signal: {}", input.id, signal);
-                        input.tick(HashMap::from([(*input_id, *signal)])).unwrap_or_default();
+                        input
+                            .tick(HashMap::from([(*input_id, *signal)]))
+                            .unwrap_or_default();
                     }
                 }
             }
@@ -605,11 +613,6 @@ impl eframe::App for MyApp {
                                 }
                                 Logicals::Wire => {
                                     // Get wire world position
-                                    // let wire = pan_item.as_any().downcast_ref::<Wire>().unwrap();
-                                    // //since the wire is a line with 2 points we need to offset both points by the pan center
-                                    // let p1 = wire.line.p1 - pan_center.to_vec2();
-                                    // let p2 = wire.line.p2 - pan_center.to_vec2();
-
                                     // //create containing rect for the wire
                                     // let rect = egui::Rect::from_min_max(p1, p2);
                                     let builder = UiBuilder::new(); //.max_rect(rect);

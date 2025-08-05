@@ -94,13 +94,16 @@ impl Logical for Output {
             return Err(Box::new(InvalidOperationError));
         }
         if ins.is_empty() {
+            self.signal = false; // If no inputs, signal is false
             return Ok(HashMap::from([(self.id, false)])); // If no inputs, return false
         }
-        //for every wire connected to this output, return the signal
+        self.signal = ins.get(&self.id).cloned().unwrap_or(false);
+
         if self.out_wire_ids.is_empty() {
             return Ok(HashMap::new()); // If no wires, return the signal
         }
         let mut out_signals = HashMap::new();
+        //for every wire connected to this output, return the signal
         for wire_id in &self.out_wire_ids {
             if let Some(wire_signal) = ins.get(wire_id) {
                 out_signals.insert(*wire_id, *wire_signal);
@@ -134,13 +137,14 @@ impl Logical for Output {
         live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            println!("Showing output: {}, has signal:: {}", self.id, self.signal);
-            let mut button_color = Color32::from_rgb(0, 0, 0); // Default color
-            if let Some(signal) = live_data.get(&self.id).map(|o| o.as_any().downcast_ref::<Output>().map(|o| o.signal)).unwrap_or(false) {
-                if signal{
-                    button_color = Color32::GREEN;
-                }
+            let button_color: Color32; // Default color
+            if self.signal {
+                button_color = Color32::GREEN;
+                println!("Showing output: {}, has signal:: {}", self.id, self.signal);
             } else {
+                button_color = Color32::RED;
+                println!("Output: {}, has signal:: {}", self.id, self.signal);
+            }
 
             let btn = Button::new(">")
                 .fill(button_color)

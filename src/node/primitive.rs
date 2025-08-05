@@ -124,6 +124,16 @@ impl PrimitiveType {
                 }
                 Ok(map)
             }
+            PrimitiveType::LIGHT => {
+                //ensure only one input
+                if ins.len() != 1 {
+                    return Err("LIGHT requires exactly one input".into());
+                }
+                // LIGHT has no outputs, for example, always outputs empty map
+                gate.state = ins.values().next().cloned().unwrap_or(false); // Set gate state based on input
+                let map = HashMap::new();
+                Ok(map)
+            }
             _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
         }
     }
