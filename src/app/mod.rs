@@ -1,16 +1,22 @@
+use super::node::*;
 mod ui_util;
 pub use ui_util::ClickItem;
 
 mod pan_area;
 use pan_area::PanArea;
 
-use super::node::*;
+mod data;
+pub use data::*;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::{collections::HashMap, hash::Hash};
 
-use eframe::{self, *};
-use egui::{Pos2, Ui, UiBuilder};
+use eframe::{
+    self,
+    egui::{Pos2, Ui, UiBuilder},
+    *,
+};
+
 use egui_dnd::dnd;
 use serde;
 
@@ -40,7 +46,7 @@ pub struct MyApp {
 
     pan_center: Pos2,
     pan_area_rect: Option<egui::Rect>,
-    dragging_kind: Option<GateType>,
+    dragging_kind: Option<GateKind>,
     pub dragging_gate: Option<usize>,
     pub clicked_gate: Option<usize>, // the gate that is currently being clicked on
 
@@ -91,36 +97,14 @@ impl MyApp {
     }
 
     fn gates_setup(mut self) -> Self {
-        self.saved = Self::load_chips();
+        self.saved = data::Data::load_chips();
         println!("Loaded chips: {}", self.saved.len());
 
-        self.prims = Self::load_prims();
+        self.prims = data::Data::load_prims();
         println!("Loaded prims: {}", self.prims.len());
 
         self.files_loaded = true;
         self
-    }
-    pub fn load_chips() -> Vec<Primitive> {
-        let gates = Vec::<Primitive>::new();
-
-        //read saves directory for each file add a gate to the vector
-        let dir = std::fs::read_dir("./saves").unwrap();
-        for entry in dir {
-            print!("Loading gate: ");
-            let entry = entry.unwrap();
-            if entry.path().is_file() {
-                println!("{}", entry.path().display());
-                // Check if the file name ends with ".gate"
-                let file_name = entry.file_name().into_string().unwrap();
-                if file_name.ends_with(".gate") {
-                    // Load the gate from the file
-                    // let gate_template = Primitive::new(file_name);
-                    // gates.push(gate_template);
-                }
-            }
-        }
-        println!("Loaded {} gates", gates.len());
-        gates
     }
 
     pub fn next_id() -> usize {
@@ -128,84 +112,6 @@ impl MyApp {
         let id = unsafe { NEXT_ID };
         unsafe { NEXT_ID += 1 };
         id
-    }
-
-    pub fn load_prims() -> Vec<Primitive> {
-        let mut prims: Vec<Primitive> = Vec::new();
-
-        //read saves directory for each file add a gate to the vector
-        let data = std::fs::read_to_string("./saves/primitives").unwrap();
-        let lines = data.lines();
-        for l in lines {
-            print!("Loading gate: ");
-            let split = l.split(":");
-            let mut parts = Vec::<&str>::new();
-
-            for n in split {
-                parts.push(n)
-            }
-            let n1 = parts[1].parse::<usize>();
-            let n2 = parts[2].parse::<usize>();
-            if let Ok(n1) = n1 {
-                if let Ok(n2) = n2 {
-                    let new_gate = Primitive::from_values(parts[0], n1, n2);
-                    prims.push(new_gate);
-                }
-            }
-        }
-        println!("Loaded {} gates", prims.len());
-        prims
-    }
-
-    pub fn load_data(path: &str) -> Vec<Gate> {
-        //for every line in the file, create a gate
-        let data = std::fs::read_to_string(path).unwrap();
-        let lines = data.lines();
-        let mut gates = Vec::<Gate>::new();
-        for l in lines {
-            let split = l.split(":");
-            let mut parts = Vec::<&str>::new();
-
-            for n in split {
-                parts.push(n)
-            }
-            if parts.len() < 3 {
-                continue; // skip invalid lines
-            }
-            let label = parts[0].to_string();
-            let n_ins = parts[1]
-                .split("[")
-                .nth(1)
-                .and_then(|s| s.split("]").next())
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
-            let n_outs = parts[2]
-                .split("[")
-                .nth(1)
-                .and_then(|s| s.split("]").next())
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
-
-            println!(
-                "Creating gate: {} with {} inputs and {} outputs",
-                label, n_ins, n_outs
-            );
-            println!("Parts: {:?}", parts);
-
-            let gate = Gate::generate(label, n_ins, n_outs);
-            gates.push(gate);
-        }
-        gates
-    }
-
-    pub fn save_chips(&self) {
-        // Save each gate to a file in the saves directory, overwriting existing files
-        std::fs::create_dir_all("./saves").unwrap();
-        for gate in &self.saved {
-            let file_path = format!("./saves/{}.gate", gate.label);
-            let serialized_gate = serde_json::to_string(gate).unwrap();
-            std::fs::write(file_path, serialized_gate).unwrap();
-        }
     }
 
     fn update_wire_positions(&mut self, ui: &mut Ui, pan_center: Pos2) {
@@ -275,23 +181,23 @@ impl MyApp {
 
             match kind {
                 //sort and borrow into the correct vector
-                Logicals::Gate(_) => {
+                LogicalKind::Gate(_) => {
                     // Get gate world position
                     if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
                         pre_gates.insert(pair.0, gate);
                     }
                 }
-                Logicals::IO(IOKind::Output) => {
+                LogicalKind::IO(IOKind::Output) => {
                     if let Some(output) = item.as_any_mut().downcast_mut::<Output>() {
                         pre_outs.insert(pair.0, output);
                     }
                 }
-                Logicals::Wire => {
+                LogicalKind::Wire => {
                     if let Some(wire) = item.as_any_mut().downcast_mut::<Wire>() {
                         pre_wires.insert(pair.0, wire);
                     }
                 }
-                Logicals::IO(IOKind::Input) => {
+                LogicalKind::IO(IOKind::Input) => {
                     if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
                         pre_ins.insert(pair.0, input);
                     }
@@ -388,7 +294,7 @@ impl eframe::App for MyApp {
             // an output was clicked, so we want to create a wire if we are not currently holding a wire
             //lookup the type of the clicked IO by its id in the live_data map
             match clicked_io.item_type {
-                Logicals::IO(IOKind::Input) => {
+                LogicalKind::IO(IOKind::Input) => {
                     println!("Clicked on Input: {:?}", clicked_io);
 
                     if let Some(mut wire) = self.holding_wire.take() {
@@ -406,7 +312,7 @@ impl eframe::App for MyApp {
                         println!("No wire to connect to input, holding_wire is None");
                     }
                 }
-                Logicals::IO(IOKind::Output) => {
+                LogicalKind::IO(IOKind::Output) => {
                     println!("Clicked on Output: {:?}", clicked_io);
                     if self.holding_wire.is_none() {
                         println!("Creating wire from clicked IO: {:?}", clicked_io);
@@ -448,7 +354,7 @@ impl eframe::App for MyApp {
                 if ui.button("New Chip").clicked() {
                     let new_chip = Primitive::from_values("New Chip", 0, 0);
                     self.saved.push(new_chip);
-                    self.save_chips();
+                    data::Data::save_chip(&self.live_data);
                 };
 
                 //two "columns" first 80% th width for chip name, second 20% width for trash icon
@@ -467,7 +373,7 @@ impl eframe::App for MyApp {
                         if ui.button("Delete").clicked() {
                             // Remove the gate from the saved gates
                             queue_rem = Some(idx);
-                            self.save_chips();
+                            data::Data::save_chip(&self.live_data);
                         }
                         idx += 1;
                     });
@@ -567,7 +473,7 @@ impl eframe::App for MyApp {
                         if let Some(pan_item) = self.live_data.get(&i) {
                             let kind = pan_item.get_kind();
                             match kind {
-                                Logicals::Gate(_) => {
+                                LogicalKind::Gate(_) => {
                                     // Get gate world position
                                     let world_pos: Pos2 = pan_item.get_position().unwrap();
 
@@ -586,32 +492,34 @@ impl eframe::App for MyApp {
                                     let builder =
                                         UiBuilder::new().max_rect(rect).sense(Sense::click());
 
-                                    let r = ui
-                                        .scope_builder(builder, |ui| {
-                                            let response = pan_item.show(
-                                                ui,
-                                                &mut self.click_item,
-                                                &self.live_data,
-                                            );
-                                            if response.drag_started()
-                                                && ui.input(|i| !i.key_down(egui::Key::Space))
+                                    ui.scope_builder(builder, |ui| {
+                                        let response = pan_item.show(
+                                            ui,
+                                            &mut self.click_item,
+                                            &self.live_data,
+                                        );
+                                        if response.drag_started()
+                                            && ui.input(|i| !i.key_down(egui::Key::Space))
+                                        {
+                                            self.dragging_gate = Some(i);
+                                        }
+
+                                        if response.drag_stopped() {
+                                            self.dragging_gate = None;
+                                        }
+
+                                        if response.clicked() {
+                                            //if the item was a gate (should always be), set the clicked_gate to this id
+                                            if let Some(_) =
+                                                pan_item.as_any().downcast_ref::<Gate>()
                                             {
-                                                self.dragging_gate = Some(i);
+                                                self.clicked_gate = Some(i);
                                             }
-
-                                            if response.drag_stopped() {
-                                                self.dragging_gate = None;
-                                            }
-                                        })
-                                        .response;
-
-                                    if r.clicked() {
-                                        //if the gate was a pulse gate, toggle its state
-                                        self.clicked_gate = Some(i);
-                                    }
-                                    r
+                                        }
+                                    })
+                                    .response
                                 }
-                                Logicals::Wire => {
+                                LogicalKind::Wire => {
                                     // Get wire world position
                                     // //create containing rect for the wire
                                     // let rect = egui::Rect::from_min_max(p1, p2);
@@ -622,7 +530,7 @@ impl eframe::App for MyApp {
                                     })
                                     .response
                                 }
-                                Logicals::IO(_) => {
+                                LogicalKind::IO(_) => {
                                     ui.scope_builder(UiBuilder::new(), |_ui| {}).response //does nothing
                                 }
                             };
@@ -652,12 +560,14 @@ impl eframe::App for MyApp {
                     if self.clicked_gate.is_some() {
                         // If a gate was clicked, toggle its state
                         if let Some(index) = self.clicked_gate {
-                            if let Some(gate) = self.live_data.get_mut(&index) {
+                            if let Some(item) = self.live_data.get_mut(&index) {
                                 print!(
                                     "Gate was clicked: {:?}",
-                                    gate.as_any().downcast_ref::<Gate>()
+                                    item.as_any().downcast_ref::<Gate>()
                                 );
-                                gate.click_on();
+                                if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
+                                    gate.click_on();
+                                }
                             }
                         }
                         self.clicked_gate = None; // reset after clicking

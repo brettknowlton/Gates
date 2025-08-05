@@ -1,21 +1,19 @@
 use super::*;
 
 use crate::MyApp;
-use eframe::egui::{Rect, Stroke};
+use eframe::{egui::{Rect, Stroke}};
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 pub struct WireLine {
     pub p1: Pos2,
     pub p2: Pos2,
-    color: Color32,
     smoothing: bool,
 }
 impl WireLine {
-    pub fn new(p1: Pos2, p2: Pos2, color: Color32, smoothing: bool) -> Self {
+    pub fn new(p1: Pos2, p2: Pos2, smoothing: bool) -> Self {
         WireLine {
             p1,
             p2,
-            color,
             smoothing,
         }
     }
@@ -27,7 +25,6 @@ impl Hash for WireLine {
         self.p1.y.to_bits().hash(state);
         self.p2.x.to_bits().hash(state);
         self.p2.y.to_bits().hash(state);
-        self.color.hash(state);
         self.smoothing.hash(state);
     }
 }
@@ -45,7 +42,7 @@ pub struct Wire {
 }
 
 impl Wire {
-    fn new(source_id: usize, position: Pos2, color: Color32, smoothing: bool) -> Self {
+    fn new(source_id: usize, position: Pos2, smoothing: bool) -> Self {
         Wire {
             id: MyApp::next_id(),
             signal: false,
@@ -53,7 +50,7 @@ impl Wire {
             dest: None,
 
             connected: false,
-            line: WireLine::new(position, position, color, smoothing), //line begins at one point
+            line: WireLine::new(position, position, smoothing), //line begins at one point
         }
     }
 
@@ -77,7 +74,6 @@ impl Wire {
         Box::new(Wire::new(
             output_id,
             position,
-            Color32::from_rgb(0, 0, 0),
             false,
         ))
     }
@@ -114,8 +110,8 @@ impl Logical for Wire {
         }
     }
 
-    fn get_kind(&self) -> Logicals {
-        Logicals::Wire
+    fn get_kind(&self) -> LogicalKind {
+        LogicalKind::Wire
     }
 
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
@@ -137,12 +133,17 @@ impl Logical for Wire {
             Sense::hover(),
         );
 
+        let color = if self.signal {
+            Color32::from_rgb(0, 255, 0) // Green if signal is on
+        } else {
+            LINE_DEFAULT_COLOR // Default color if signal is off
+        };
         //if wire is connected, update the line's end points to be the current source -> destination positions
         if self.connected {}
         // Draw the wire line
         ui.painter().line_segment(
             [self.line.p1, self.line.p2],
-            Stroke::new(LINE_THICKNESS, self.line.color),
+            Stroke::new(LINE_THICKNESS, color),
         );
 
         response

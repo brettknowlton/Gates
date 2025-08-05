@@ -94,3 +94,4 @@ impl<'a> Widget for PanArea<'a> {
         response
     }
 }
+

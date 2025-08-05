@@ -4,41 +4,41 @@ use super::*;
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Primitive {
     pub label: String,
-    pub kind: GateType,
+    pub kind: GateKind,
     pub n_ins: usize,
     pub n_outs: usize,
 }
 
 impl Primitive {
     pub fn from_values(label: &str, num_inputs: usize, num_outputs: usize) -> Primitive {
-        let kind: GateType;
+        let kind: GateKind;
         match label {
             "HI-SIGNAL" => {
-                kind = GateType::Primitive(PrimitiveType::HISIGNAL); // Assuming HI-SIGNAL is a type of pulse
+                kind = GateKind::Primitive(PrimitiveKind::HISIGNAL); // Assuming HI-SIGNAL is a type of pulse
             }
             "LO-SIGNAL" => {
-                kind = GateType::Primitive(PrimitiveType::LOSIGNAL); // Assuming LO-SIGNAL is a type of pulse
+                kind = GateKind::Primitive(PrimitiveKind::LOSIGNAL); // Assuming LO-SIGNAL is a type of pulse
             }
             "PULSE" => {
-                kind = GateType::Primitive(PrimitiveType::PULSE);
+                kind = GateKind::Primitive(PrimitiveKind::PULSE);
             }
             "LIGHT" => {
-                kind = GateType::Primitive(PrimitiveType::LIGHT);
+                kind = GateKind::Primitive(PrimitiveKind::LIGHT);
             }
             "BUFFER" => {
-                kind = GateType::Primitive(PrimitiveType::BUFFER);
+                kind = GateKind::Primitive(PrimitiveKind::BUFFER);
             }
             "NOT" => {
-                kind = GateType::Primitive(PrimitiveType::NOT);
+                kind = GateKind::Primitive(PrimitiveKind::NOT);
             }
             "OR" => {
-                kind = GateType::Primitive(PrimitiveType::OR);
+                kind = GateKind::Primitive(PrimitiveKind::OR);
             }
             "AND" => {
-                kind = GateType::Primitive(PrimitiveType::AND);
+                kind = GateKind::Primitive(PrimitiveKind::AND);
             }
             _ => {
-                kind = GateType::Primitive(PrimitiveType::None);
+                kind = GateKind::Primitive(PrimitiveKind::None);
             }
         }
         let var = Primitive {
@@ -64,14 +64,9 @@ impl Primitive {
     }
 }
 
-impl Widget for Primitive {
-    fn ui(self, _ui: &mut Ui) -> Response {
-        todo!()
-    }
-}
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PrimitiveType {
+pub enum PrimitiveKind {
     #[default]
     None,
     HISIGNAL,
@@ -84,7 +79,7 @@ pub enum PrimitiveType {
     AND,
 }
 
-impl PrimitiveType {
+impl PrimitiveKind {
     pub fn tick(
         self,
         gate: &mut Gate,
@@ -92,7 +87,7 @@ impl PrimitiveType {
     ) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         println!("Ticking primitive type: {}", self);
         match self {
-            PrimitiveType::HISIGNAL => {
+            PrimitiveKind::HISIGNAL => {
                 // HI-SIGNAL logic, for example, always outputs true
                 let mut map = HashMap::new();
                 for (id, _) in gate.outs.iter() {
@@ -100,7 +95,7 @@ impl PrimitiveType {
                 } // Assuming single output
                 Ok(map)
             }
-            PrimitiveType::LOSIGNAL => {
+            PrimitiveKind::LOSIGNAL => {
                 // LO-SIGNAL logic, for example, always outputs false
                 let mut map = HashMap::new();
                 for (id, _) in gate.outs.iter() {
@@ -108,7 +103,7 @@ impl PrimitiveType {
                 } // Assuming single output
                 Ok(map)
             }
-            PrimitiveType::BUFFER => {
+            PrimitiveKind::BUFFER => {
                 // BUFFER logic, for example, passes the signal through
                 //ensure only one input
                 if ins.len() != 1 {
@@ -124,7 +119,7 @@ impl PrimitiveType {
                 }
                 Ok(map)
             }
-            PrimitiveType::LIGHT => {
+            PrimitiveKind::LIGHT => {
                 //ensure only one input
                 if ins.len() != 1 {
                     return Err("LIGHT requires exactly one input".into());
@@ -134,28 +129,50 @@ impl PrimitiveType {
                 let map = HashMap::new();
                 Ok(map)
             }
+            PrimitiveKind::PULSE => {
+                // PULSE is a special case, it will send a 1-frame pulse
+                //ensure no inputs
+                if ins.len() > 1 {
+                    return Err("PULSE requires exactly zero or one input".into());
+                }
+
+                let mut map = HashMap::new();
+                if let Some((out_id, _)) = gate.outs.iter().next() {//get the  id of the (only) output
+
+                    if gate.state{
+                        //set state to false and send a true signal
+                        gate.state = false;
+                        map.extend(HashMap::from([(*out_id, true)])); // Assuming single output at index 0
+                    }else{
+                        //send a false signal
+                        map.extend(HashMap::from([(*out_id, false)])); // Assuming single output at index 0
+                    }
+                }
+                Ok(map)
+            }
+
             _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
         }
     }
 }
 
-impl Display for PrimitiveType {
+impl Display for PrimitiveKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PrimitiveType::None => write!(f, "None"),
-            PrimitiveType::HISIGNAL => write!(f, "HI-SIGNAL"),
-            PrimitiveType::LOSIGNAL => write!(f, "LO-SIGNAL"),
-            PrimitiveType::PULSE => write!(f, "PULSE"),
-            PrimitiveType::LIGHT => write!(f, "LIGHT"),
-            PrimitiveType::BUFFER => write!(f, "BUFFER"),
-            PrimitiveType::NOT => write!(f, "NOT"),
-            PrimitiveType::OR => write!(f, "OR"),
-            PrimitiveType::AND => write!(f, "AND"),
+            PrimitiveKind::None => write!(f, "None"),
+            PrimitiveKind::HISIGNAL => write!(f, "HI-SIGNAL"),
+            PrimitiveKind::LOSIGNAL => write!(f, "LO-SIGNAL"),
+            PrimitiveKind::PULSE => write!(f, "PULSE"),
+            PrimitiveKind::LIGHT => write!(f, "LIGHT"),
+            PrimitiveKind::BUFFER => write!(f, "BUFFER"),
+            PrimitiveKind::NOT => write!(f, "NOT"),
+            PrimitiveKind::OR => write!(f, "OR"),
+            PrimitiveKind::AND => write!(f, "AND"),
         }
     }
 }
 
-impl Widget for PrimitiveType {
+impl Widget for PrimitiveKind {
     fn ui(self, ui: &mut Ui) -> Response {
         let r = ui.add_enabled_ui(false, |ui| {
             ui.with_layout(Layout::centered_and_justified(Direction::TopDown), |ui| {

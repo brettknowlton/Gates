@@ -26,7 +26,7 @@ pub struct Gate {
     pub n_out: usize,
     pub outs: HashMap<usize, bool>, //bool represents the desired output state, this will be passed to the outputs on their tick() function
 
-    pub kind: GateType,
+    pub kind: GateKind,
     pub state: bool,
 }
 
@@ -34,7 +34,7 @@ impl Logical for Gate {
     fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         let k = self.kind.clone();
         match k {
-            GateType::Primitive(k) => {
+            GateKind::Primitive(k) => {
                 // For primitive gates, we can run their logic
                 k.tick(self, ins)
             }
@@ -44,8 +44,8 @@ impl Logical for Gate {
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.position.to_pos2())
     }
-    fn get_kind(&self) -> Logicals {
-        Logicals::Gate(self.kind.clone())
+    fn get_kind(&self) -> LogicalKind {
+        LogicalKind::Gate(self.kind.clone())
     }
     fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>> {
         self.position = GridVec2::from(pos);
@@ -62,11 +62,15 @@ impl Logical for Gate {
 
         let checkbox_height = ui.spacing().interact_size.y;
         
-        let mut fill_color: Color32= Color32::GRAY;
-        if self.kind == GateType::Primitive(PrimitiveType::LIGHT) && self.state {
-            fill_color = Color32::WHITE; // White for light on
-        } else {
-            fill_color = Color32::BLACK; // Black for light off
+        let mut accent_color: Color32= Color32::GRAY;
+        let mut fill_color: Color32 = Color32::LIGHT_GRAY;
+
+        if self.kind == GateKind::Primitive(PrimitiveKind::LIGHT) && self.state {
+            accent_color = Color32::WHITE; // White for light on
+            fill_color = Color32::from_rgb(255, 255, 0); // Yellow for light on
+        } else if self.kind == GateKind::Primitive(PrimitiveKind::LIGHT) && !self.state {
+            accent_color = Color32::BLACK; // Black for light off
+            fill_color = Color32::from_rgb(128, 128, 128); // Gray for light off
         }
 
 
@@ -74,7 +78,7 @@ impl Logical for Gate {
         ui.painter().rect(
             rect,
             10.0,
-            fill_color,
+            accent_color,
             Stroke::new(1.0, Color32::GRAY),
             StrokeKind::Middle,
         );
@@ -120,13 +124,13 @@ impl Logical for Gate {
 
         // CENTER - Label only
         ui.painter()
-            .rect_filled(center_rect, 0.0, Color32::DARK_GRAY);
+            .rect_filled(center_rect, 0.0, fill_color);
         ui.painter().text(
             center_rect.center(),
             Align2::CENTER_CENTER,
             self.label.clone(),
-            TextStyle::Button.resolve(ui.style()),
-            Color32::WHITE,
+            TextStyle::Monospace.resolve(ui.style()),
+            Color32::BLACK,
         );
 
         // RIGHT SIDE - Output buttons for wire creation
@@ -158,6 +162,196 @@ impl Logical for Gate {
         response
     }
 }
+
+impl Gate {
+    pub fn new(name: String, id: usize) -> Gate {
+        let n_ins = 0;
+        let n_outs = 0;
+
+        let g = Gate {
+            label: name,
+            id,
+            position: GridVec2::new(0.0, 0.0),
+            size: GridVec2::new(150.0, 110.0),
+
+            n_in: n_ins,
+            ins: HashMap::new(),
+            n_out: n_outs,
+            outs: HashMap::new(),
+
+            kind: GateKind::None,
+
+            state: false,
+        };
+        g
+    }
+
+    pub fn click_on(&mut self) {
+        match self.kind {
+            GateKind::Primitive(PrimitiveKind::PULSE) => {
+                self.state = !self.state;
+            }
+            _ => println!("This gate type does not support click actions"),
+        }
+    }
+
+    fn from_template(t: &Primitive, pos: Pos2) -> Gate {
+        let g = Gate {
+            label: t.label.clone(),
+            id: MyApp::next_id(),
+            position: GridVec2::new(pos.x, pos.y),
+            size: GridVec2::new(150.0, 110.0),
+
+            n_in: t.n_ins as usize,
+            ins: HashMap::new(),
+            n_out: t.n_outs as usize,
+            outs: HashMap::new(),
+
+            kind: t.kind.clone(),
+            state: false,
+        };
+        g
+    }
+
+    pub fn next_id() -> usize {
+        static mut ID: usize = 0;
+        unsafe {
+            ID += 1;
+            ID
+        }
+    }
+
+    pub fn create_gate_from_template(t: GateKind, pos: Pos2) -> Gate {
+        print!("Creating gate from template ID: {:?}", t);
+        let new_gate = match t {
+            GateKind::Primitive(PrimitiveKind::HISIGNAL) => {
+                Gate::from_template(&Primitive::from_values("HI-SIGNAL", 0, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::LOSIGNAL) => {
+                Gate::from_template(&Primitive::from_values("LO-SIGNAL", 0, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::PULSE) => {
+                Gate::from_template(&Primitive::from_values("PULSE", 1, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::LIGHT) => {
+                Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::BUFFER) => {
+                Gate::from_template(&Primitive::from_values("BUFFER", 1, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::NOT) => {
+                Gate::from_template(&Primitive::from_values("NOT", 1, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::OR) => {
+                Gate::from_template(&Primitive::from_values("OR", 2, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::AND) => {
+                Gate::from_template(&Primitive::from_values("AND", 2, 1), pos)
+            }
+            _ => Gate::from_template(&Primitive::from_values("E: Not Found", 1, 1), pos),
+        };
+
+        println!("Created gate: {:?}", new_gate);
+        new_gate
+    }
+
+    pub fn create_io(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
+        self.create_inputs(live_data);
+        self.create_outputs(live_data);
+    }
+
+    pub fn create_inputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
+        let mut new_ins = HashMap::<usize, bool>::new();
+        for i in 0..self.n_in {
+            let new_input = Input::new(self.id, i);
+            live_data.insert(new_input.id, Box::new(new_input.clone()));
+            new_ins.insert(new_input.id, false);
+        }
+        self.ins = new_ins;
+    }
+
+    pub fn create_outputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
+        let mut new_outs = HashMap::<usize, bool>::new();
+        for i in 0..self.n_out {
+            let new_output = Output::new(self.id, i);
+            live_data.insert(new_output.id, Box::new(new_output.clone()));
+            new_outs.insert(new_output.id, false); // Initialize with false signal
+        }
+        self.outs = new_outs;
+    }
+
+    pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
+        let kind: GateKind;
+        let id = Gate::next_id();
+        match label.as_str() {
+            "HI-SIGNAL" => {
+                kind = GateKind::Primitive(PrimitiveKind::HISIGNAL);
+            }
+            "LO-SIGNAL" => {
+                kind = GateKind::Primitive(PrimitiveKind::LOSIGNAL);
+            }
+            "PULSE" => {
+                kind = GateKind::Primitive(PrimitiveKind::PULSE);
+            }
+            "LIGHT" => {
+                kind = GateKind::Primitive(PrimitiveKind::LIGHT);
+            }
+            "BUFFER" => {
+                kind = GateKind::Primitive(PrimitiveKind::BUFFER);
+            }
+            "NOT" => {
+                kind = GateKind::Primitive(PrimitiveKind::NOT);
+            }
+            "OR" => {
+                kind = GateKind::Primitive(PrimitiveKind::OR);
+            }
+            "AND" => {
+                kind = GateKind::Primitive(PrimitiveKind::AND);
+            }
+            _ => {
+                kind = GateKind::Primitive(PrimitiveKind::None);
+            }
+        }
+
+        let g = Gate {
+            label,
+            position: GridVec2::new(0.0, 0.0),
+            id: id,
+
+            size: GridVec2::new(150.0, 110.0),
+
+            n_in: n_ins,
+            ins: HashMap::new(),
+            n_out: n_outs,
+            outs: HashMap::new(),
+            kind,
+
+            state: false,
+        };
+        g
+    }
+}
+
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize)]
+pub enum GateKind {
+    #[default]
+    None,
+    Primitive(PrimitiveKind),
+    Custom,
+}
+
+impl Display for GateKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GateKind::None => write!(f, "None"),
+            GateKind::Primitive(kind) => write!(f, "{}", kind),
+            GateKind::Custom => write!(f, "Custom"),
+        }
+    }
+}
+
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -194,174 +388,5 @@ impl Hash for GridVec2 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.vec.x.to_bits().hash(state);
         self.vec.y.to_bits().hash(state);
-    }
-}
-
-impl Gate {
-    pub fn new(name: String, id: usize) -> Gate {
-        let n_ins = 0;
-        let n_outs = 0;
-
-        let g = Gate {
-            label: name,
-            id,
-            position: GridVec2::new(0.0, 0.0),
-            size: GridVec2::new(150.0, 110.0),
-
-            n_in: n_ins,
-            ins: HashMap::new(),
-            n_out: n_outs,
-            outs: HashMap::new(),
-
-            kind: GateType::None,
-
-            state: false,
-        };
-        g
-    }
-
-    pub fn click_on(&mut self) {
-        match self.kind {
-            GateType::Primitive(PrimitiveType::PULSE) => {
-                self.state = !self.state;
-            }
-            _ => println!("This gate type does not support click actions"),
-        }
-    }
-
-    fn from_template(t: &Primitive, pos: Pos2) -> Gate {
-        let g = Gate {
-            label: t.label.clone(),
-            id: MyApp::next_id(),
-            position: GridVec2::new(pos.x, pos.y),
-            size: GridVec2::new(150.0, 110.0),
-
-            n_in: t.n_ins as usize,
-            ins: HashMap::new(),
-            n_out: t.n_outs as usize,
-            outs: HashMap::new(),
-
-            kind: t.kind.clone(),
-            state: false,
-        };
-        g
-    }
-
-    pub fn next_id() -> usize {
-        static mut ID: usize = 0;
-        unsafe {
-            ID += 1;
-            ID
-        }
-    }
-
-    pub fn create_gate_from_template(t: GateType, pos: Pos2) -> Gate {
-        print!("Creating gate from template ID: {:?}", t);
-        let new_gate = match t {
-            GateType::Primitive(PrimitiveType::HISIGNAL) => {
-                Gate::from_template(&Primitive::from_values("HI-SIGNAL", 0, 1), pos)
-            }
-            GateType::Primitive(PrimitiveType::LOSIGNAL) => {
-                Gate::from_template(&Primitive::from_values("LO-SIGNAL", 0, 1), pos)
-            }
-            GateType::Primitive(PrimitiveType::PULSE) => {
-                Gate::from_template(&Primitive::from_values("PULSE", 1, 1), pos)
-            }
-            GateType::Primitive(PrimitiveType::LIGHT) => {
-                Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
-            }
-            GateType::Primitive(PrimitiveType::BUFFER) => {
-                Gate::from_template(&Primitive::from_values("BUFFER", 1, 1), pos)
-            }
-            GateType::Primitive(PrimitiveType::NOT) => {
-                Gate::from_template(&Primitive::from_values("NOT", 1, 1), pos)
-            }
-            GateType::Primitive(PrimitiveType::OR) => {
-                Gate::from_template(&Primitive::from_values("OR", 2, 1), pos)
-            }
-            GateType::Primitive(PrimitiveType::AND) => {
-                Gate::from_template(&Primitive::from_values("AND", 2, 1), pos)
-            }
-            _ => Gate::from_template(&Primitive::from_values("E: Not Found", 1, 1), pos),
-        };
-
-        println!("Created gate: {:?}", new_gate);
-        new_gate
-    }
-
-    pub fn create_io(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
-        self.create_inputs(live_data);
-        self.create_outputs(live_data);
-    }
-
-    pub fn create_inputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
-        let mut new_ins = HashMap::<usize, bool>::new();
-        for i in 0..self.n_in {
-            let new_input = Input::new(self.id, i);
-            live_data.insert(new_input.id, Box::new(new_input.clone()));
-            new_ins.insert(new_input.id, false);
-        }
-        self.ins = new_ins;
-    }
-
-    pub fn create_outputs(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
-        let mut new_outs = HashMap::<usize, bool>::new();
-        for i in 0..self.n_out {
-            let new_output = Output::new(self.id, i);
-            live_data.insert(new_output.id, Box::new(new_output.clone()));
-            new_outs.insert(new_output.id, false); // Initialize with false signal
-        }
-        self.outs = new_outs;
-    }
-
-    pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
-        let kind: GateType;
-        let id = Gate::next_id();
-        match label.as_str() {
-            "HI-SIGNAL" => {
-                kind = GateType::Primitive(PrimitiveType::HISIGNAL);
-            }
-            "LO-SIGNAL" => {
-                kind = GateType::Primitive(PrimitiveType::LOSIGNAL);
-            }
-            "PULSE" => {
-                kind = GateType::Primitive(PrimitiveType::PULSE);
-            }
-            "LIGHT" => {
-                kind = GateType::Primitive(PrimitiveType::LIGHT);
-            }
-            "BUFFER" => {
-                kind = GateType::Primitive(PrimitiveType::BUFFER);
-            }
-            "NOT" => {
-                kind = GateType::Primitive(PrimitiveType::NOT);
-            }
-            "OR" => {
-                kind = GateType::Primitive(PrimitiveType::OR);
-            }
-            "AND" => {
-                kind = GateType::Primitive(PrimitiveType::AND);
-            }
-            _ => {
-                kind = GateType::Primitive(PrimitiveType::None);
-            }
-        }
-
-        let g = Gate {
-            label,
-            position: GridVec2::new(0.0, 0.0),
-            id: id,
-
-            size: GridVec2::new(150.0, 110.0),
-
-            n_in: n_ins,
-            ins: HashMap::new(),
-            n_out: n_outs,
-            outs: HashMap::new(),
-            kind,
-
-            state: false,
-        };
-        g
     }
 }

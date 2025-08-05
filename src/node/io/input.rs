@@ -100,8 +100,8 @@ impl Logical for Input {
         Ok(HashMap::from([(0, self.signal)])) // Assuming single output at index 0
     }
 
-    fn get_kind(&self) -> Logicals {
-        Logicals::IO(IOKind::Input)
+    fn get_kind(&self) -> LogicalKind {
+        LogicalKind::IO(IOKind::Input)
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn Error>> {
@@ -139,7 +139,7 @@ impl Logical for Input {
                 *on_output_click = Some(ClickItem {
                     item_id: self.id,
                     screen_position: cursor_pos,
-                    item_type: Logicals::IO(IOKind::Input),
+                    item_type: LogicalKind::IO(IOKind::Input),
                 });
             }
         })

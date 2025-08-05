@@ -115,8 +115,8 @@ impl Logical for Output {
         Ok(out_signals)
     }
 
-    fn get_kind(&self) -> Logicals {
-        Logicals::IO(IOKind::Output)
+    fn get_kind(&self) -> LogicalKind {
+        LogicalKind::IO(IOKind::Output)
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn std::error::Error>> {
@@ -154,7 +154,7 @@ impl Logical for Output {
                 *click_item = Some(ClickItem {
                     item_id: self.id,
                     screen_position: self.get_position(live_data).unwrap(),
-                    item_type: Logicals::IO(IOKind::Output),
+                    item_type: LogicalKind::IO(IOKind::Output),
                 });
             }
         })
