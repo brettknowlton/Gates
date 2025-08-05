@@ -21,10 +21,12 @@ use egui_dnd::dnd;
 use serde;
 
 const TITLE_BAR_HEIGHT: f32 = 30.0;
-
 const SIDE_PANEL_WIDTH: f32 = 400.0;
 
 static mut NEXT_ID: usize = 0; // static variable to generate unique ids for gates and wires
+
+
+
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -302,20 +304,30 @@ impl eframe::App for MyApp {
             match clicked_io.item_type {
                 LogicalKind::IO(IOKind::Input) => {
                     println!("Clicked on Input: {:?}", clicked_io);
+                    //check if this input already has a wire connected
+                    let in_wire_id: Option<usize>= self.live_data.get(&clicked_io.item_id).unwrap().as_any().downcast_ref::<Input>().unwrap().in_wire_id;
 
-                    if let Some(wire_id) = self.holding_wire.take() {
-                        //connect the wire to the input
-                        println!("Connecting wire to input: {:?}", clicked_io);
-                        self.holding_wire = None;
-                        let wire= self.live_data.get_mut(&wire_id).unwrap().as_any_mut().downcast_mut::<Wire>().unwrap();
-                        //set wire's p2 to the clicked position
-                        // and set the wires destination to the input's id
-                        // wire.set_p2(clicked_io.screen_position);
-                        wire.dest = Some(clicked_io.item_id);
-                        wire.connected = true; // mark the wire as connected
-                    } else {
-                        println!("No wire to connect to input, holding_wire is None");
+                    if in_wire_id.is_none() {
+                        if let Some(wire_id) = self.holding_wire.take() {
+                            //connect the wire to the input
+                            println!("Connecting wire to input: {:?}", clicked_io);
+                            self.holding_wire = None;
+                            let wire= self.live_data.get_mut(&wire_id).unwrap().as_any_mut().downcast_mut::<Wire>().unwrap();
+                            //set wire's p2 to the clicked position
+                            // and set the wires destination to the input's id
+                            // wire.set_p2(clicked_io.screen_position);
+                            wire.dest = Some(clicked_io.item_id);
+                            wire.connected = true; // mark the wire as connected
+
+
+                            self.live_data.get_mut(&clicked_io.item_id).unwrap().as_any_mut().downcast_mut::<Input>().unwrap().in_wire_id = Some(wire_id);
+
+                        } else {
+                            println!("No wire to connect to input, holding_wire is None");
+                        }
+                        
                     }
+        
                 }
                 LogicalKind::IO(IOKind::Output) => {
                     println!("Clicked on Output: {:?}", clicked_io);

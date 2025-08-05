@@ -86,72 +86,73 @@ impl PrimitiveKind {
         ins: HashMap<usize, bool>,
     ) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         println!("Ticking primitive type: {}", self);
+
+        if ins.len() > self.get_n_desired_inputs() {
+            return Err(format!("{} requires exactly {} or less inputs", self, self.get_n_desired_inputs()).into());
+        }
+
         match self {
             PrimitiveKind::HISIGNAL => {
-                // HI-SIGNAL logic, for example, always outputs true
-                let mut map = HashMap::new();
-                for (id, _) in gate.outs.iter() {
-                    map.extend(HashMap::from([(*id, true)]));
-                } // Assuming single output
-                Ok(map)
+                //HI-SIGNAL always outputs true
+                let (id, _) = gate.outs.iter().next().unwrap();
+                gate.state = true; // Set gate state to true
+                Ok(HashMap::from([(*id, true)]))
             }
             PrimitiveKind::LOSIGNAL => {
-                // LO-SIGNAL logic, for example, always outputs false
-                let mut map = HashMap::new();
-                for (id, _) in gate.outs.iter() {
-                    map.extend(HashMap::from([(*id, false)]));
-                } // Assuming single output
-                Ok(map)
+                // LO-SIGNAL always outputs false
+                let (id, _) = gate.outs.iter().next().unwrap();
+                gate.state = false; // Set gate state to false
+                Ok(HashMap::from([(*id, false)]))
             }
             PrimitiveKind::BUFFER => {
                 // BUFFER logic, for example, passes the signal through
                 //ensure only one input
-                if ins.len() != 1 {
-                    return Err("BUFFER requires exactly one input".into());
+                let (out_id, _) = gate.outs.iter().next().expect("BUFFER was ticked but did not have an output"); //get the  id of the (only) output
+                if let Some((_, signal)) = ins.iter().next() {
+                    Ok(HashMap::from([(*out_id, *signal)])) // Assuming single output at index 0
+                } else {
+                    return Err("Input signal not found".into());
                 }
-                let mut map = HashMap::new();
-                if let Some((out_id, _)) = gate.outs.iter().next() {//get the  id of the (only) output
-                    if let Some((_, signal)) = ins.iter().next() {
-                        map.extend(HashMap::from([(*out_id, *signal)])); // Assuming single output at index 0
-                    } else {
-                        return Err("Input signal not found".into());
-                    }
-                }
-                Ok(map)
             }
             PrimitiveKind::LIGHT => {
-                //ensure only one input
-                if ins.len() != 1 {
-                    return Err("LIGHT requires exactly one input".into());
-                }
                 // LIGHT has no outputs, for example, always outputs empty map
                 gate.state = ins.values().next().cloned().unwrap_or(false); // Set gate state based on input
-                let map = HashMap::new();
-                Ok(map)
+                Ok(HashMap::new())
             }
             PrimitiveKind::PULSE => {
-                // PULSE is a special case, it will send a 1-frame pulse
-                //ensure no inputs
-                if ins.len() > 1 {
-                    return Err("PULSE requires exactly zero or one input".into());
-                }
 
-                let mut map = HashMap::new();
-                if let Some((out_id, _)) = gate.outs.iter().next() {//get the  id of the (only) output
-
-                    if gate.state{
-                        //set state to false and send a true signal
-                        gate.state = false;
-                        map.extend(HashMap::from([(*out_id, true)])); // Assuming single output at index 0
-                    }else{
-                        //send a false signal
-                        map.extend(HashMap::from([(*out_id, false)])); // Assuming single output at index 0
-                    }
+                let (out_id, _) = gate.outs.iter().next().expect("PULSE was ticked but did not have an output"); //get the  id of the (only) output
+                if gate.state {
+                    //set state to false and send a true signal
+                    gate.state = false;
+                    Ok(HashMap::from([(*out_id, true)])) // Assuming single output at index 0
+                } else {
+                    //send a false signal
+                    Ok(HashMap::from([(*out_id, false)])) // Assuming single output at index 0
                 }
-                Ok(map)
+            }
+            PrimitiveKind::NOT => {
+                // NOT logic, inverts the input signal
+                let (out_id, _) = gate.outs.iter().next().expect("NOT was ticked but did not have an output"); //get the  id of the (only) output
+                if let Some((_, signal)) = ins.iter().next() {
+                    Ok(HashMap::from([(*out_id, !signal)])) // Assuming single output at index 0
+                } else {
+                    return Err("Input signal not found".into());
+                }
             }
 
             _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
+        }
+    }
+
+
+    fn get_n_desired_inputs(&self) -> usize {
+        match self {
+            PrimitiveKind::HISIGNAL | PrimitiveKind::LOSIGNAL | PrimitiveKind::PULSE => 0,
+            PrimitiveKind::LIGHT => 1,
+            PrimitiveKind::BUFFER | PrimitiveKind::NOT => 1,
+            PrimitiveKind::OR | PrimitiveKind::AND => 2,
+            PrimitiveKind::None => 0, // Default case
         }
     }
 }

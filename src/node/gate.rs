@@ -231,7 +231,7 @@ impl Gate {
                 Gate::from_template(&Primitive::from_values("LO-SIGNAL", 0, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::PULSE) => {
-                Gate::from_template(&Primitive::from_values("PULSE", 1, 1), pos)
+                Gate::from_template(&Primitive::from_values("PULSE", 0, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::LIGHT) => {
                 Gate::from_template(&Primitive::from_values("LIGHT", 1, 0), pos)
