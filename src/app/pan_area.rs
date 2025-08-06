@@ -1,4 +1,7 @@
-use egui::{Pos2, Rect, Response, Sense, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2};
+use eframe::egui::{
+    Color32, Key, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, Widget,
+    pos2, vec2,
+};
 
 /// A pannable area that supports dragging the entire contents by holding space and clicking.
 /// It also draws a dynamic grid of 9 cells that updates as the center moves.
@@ -9,16 +12,16 @@ pub struct PanArea<'a> {
 }
 
 impl<'a> PanArea<'a> {
-    pub fn new<F>(center: &'a mut Pos2, content: F) -> Self
-    where
-        F: FnOnce(&mut Ui, Pos2) + 'a,
-    {
-        Self {
-            content: Box::new(content),
-            center,
-            drag_blocker: None,
-        }
-    }
+    // pub fn new<F>(center: &'a mut Pos2, content: F) -> Self
+    // where
+    //     F: FnOnce(&mut Ui, Pos2) + 'a,
+    // {
+    //     Self {
+    //         content: Box::new(content),
+    //         center,
+    //         drag_blocker: None,
+    //     }
+    // }
 
     pub fn with_drag_blocker<F>(center: &'a mut Pos2, drag_blocker: &'a bool, content: F) -> Self
     where
@@ -32,7 +35,7 @@ impl<'a> PanArea<'a> {
     }
 }
 
-impl<'a> egui::Widget for PanArea<'a> {
+impl<'a> Widget for PanArea<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
         let available_size = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(available_size, Sense::click_and_drag());
@@ -41,7 +44,7 @@ impl<'a> egui::Widget for PanArea<'a> {
         let mut pan_delta = Vec2::ZERO;
 
         ui.input(|i| {
-            if i.key_down(egui::Key::Space)
+            if i.key_down(Key::Space)
                 && i.pointer.primary_down()
                 && self.drag_blocker.map_or(true, |blocker| !*blocker)
             {
@@ -73,8 +76,8 @@ impl<'a> egui::Widget for PanArea<'a> {
                 painter.rect(
                     grid_rect,
                     0.0,
-                    egui::Color32::from_gray(20),
-                    egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+                    Color32::from_gray(20),
+                    Stroke::new(1.0, Color32::from_gray(60)),
                     StrokeKind::Outside,
                 );
             }
@@ -91,3 +94,4 @@ impl<'a> egui::Widget for PanArea<'a> {
         response
     }
 }
+
