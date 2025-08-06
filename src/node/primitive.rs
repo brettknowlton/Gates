@@ -97,7 +97,7 @@ impl PrimitiveKind {
         gate: &mut Gate,
         ins: HashMap<usize, bool>,
     ) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
-        println!("Ticking primitive type: {}", self);
+        // println!("Ticking primitive type: {}", self);
 
         if ins.len() > self.get_n_desired_inputs() {
             return Err(format!("{} requires exactly {} or less inputs", self, self.get_n_desired_inputs()).into());
@@ -106,7 +106,7 @@ impl PrimitiveKind {
         match self {
             PrimitiveKind::HISIGNAL => {
                 //HI-SIGNAL always outputs true
-                println!("Ticking HISIGNAL, setting output to true");
+                // println!("Ticking HISIGNAL, setting output to true");
                 let (out_id, _) = gate.outs.iter().next().unwrap();
                 gate.state = true; // Set gate state to true
                 Ok(HashMap::from([(*out_id, true)]))

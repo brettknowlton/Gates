@@ -71,12 +71,38 @@ impl Logical for Gate {
         let mut accent_color: Color32= Color32::GRAY;
         let mut fill_color: Color32 = Color32::LIGHT_GRAY;
 
-        if self.kind == GateKind::Primitive(PrimitiveKind::LIGHT) && self.state {
-            accent_color = Color32::WHITE; // White for light on
-            fill_color = Color32::from_rgb(255, 255, 0); // Yellow for light on
-        } else if self.kind == GateKind::Primitive(PrimitiveKind::LIGHT) && !self.state {
-            accent_color = Color32::BLACK; // Black for light off
-            fill_color = Color32::from_rgb(128, 128, 128); // Gray for light off
+        match self.kind{
+            GateKind::Primitive(PrimitiveKind::HISIGNAL) => {
+                accent_color = HI_COLOR;
+                fill_color = Color32::from_rgb(0, 255, 0);
+            }
+            GateKind::Primitive(PrimitiveKind::LOSIGNAL) => {
+                accent_color = LO_COLOR;
+                fill_color = Color32::from_rgb(255, 0, 0);
+            }
+            GateKind::Primitive(PrimitiveKind::PULSE) => {
+                accent_color = Color32::from_rgb(255, 165, 0);
+                fill_color = Color32::from_rgb(255, 255, 224);
+            }
+            GateKind::Primitive(PrimitiveKind::TOGGLE) => {
+                if self.state {
+                    accent_color = Color32::from_rgb(0, 0, 255);
+                    fill_color = Color32::from_rgb(224, 224, 255);
+                } else {
+                    accent_color = Color32::from_rgb(128, 128, 128);
+                    fill_color = Color32::from_rgb(200, 200, 200);
+                }
+            }
+            GateKind::Primitive(PrimitiveKind::LIGHT) => {
+                if self.state {
+                    accent_color = Color32::from_rgb(255, 255, 0);
+                    fill_color = Color32::from_rgb(255, 255, 224);
+                } else {
+                    accent_color = Color32::from_rgb(128, 128, 128);
+                    fill_color = Color32::from_rgb(200, 200, 200);
+                }
+            }
+            _ => {}
         }
 
 

@@ -26,8 +26,11 @@ use std::hash::Hash;
 use std::error::Error;
 
 const LINE_THICKNESS: f32 = 3.0;
-const LINE_DEFAULT_COLOR: Color32 = Color32::from_rgb(0, 0, 0);
+
+const DEFAULT_COLOR: Color32 = Color32::from_rgb(0, 0, 0);
+const ERR_COLOR: Color32 = Color32::from_rgb(255, 0, 0);
 
 //dark red for lo, dark green for hi
 const HI_COLOR: Color32 = Color32::from_rgb(0, 127, 0);
 const LO_COLOR: Color32 = Color32::from_rgb(127, 0, 0);
+const INTERACT_COLOR: Color32 = Color32::from_rgb(0, 0, 127);

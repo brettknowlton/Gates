@@ -12,6 +12,9 @@ pub use data::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod theme;
+pub use theme::SkeletonTheme;
+
 use eframe::{
     self,
     egui::{Context, Pos2, Ui, UiBuilder},
@@ -36,6 +39,7 @@ pub struct MyApp {
     value: f32,
 
     files_loaded: bool,
+    theme_set: bool,
     prim_templates: Vec<PrimitiveTemplate>,
     saved: Vec<PrimitiveTemplate>,
 
@@ -73,6 +77,7 @@ impl Default for MyApp {
             label: "Hello World!".to_owned(),
             value: 2.7,
             files_loaded: false,
+            theme_set: false,
 
             prim_templates: Vec::new(),
             saved: Vec::new(),
@@ -108,6 +113,13 @@ impl MyApp {
         new.event_sender = event_sender;
         new.event_receiver = event_receiver;
         new.load_data()
+    }
+
+    pub fn set_theme(&mut self, ctx: &Context, path: &str) {
+        match SkeletonTheme::from_css_file(path) {
+            Ok(theme) => theme.apply(ctx),
+            Err(err) => eprintln!("Failed to load theme: {err}"),
+        }
     }
 
     fn load_data(mut self) -> Self {
@@ -157,8 +169,10 @@ impl MyApp {
                         w.set_p2(cursor_pos);
                     }
                     //set p1 its source input's position
+                    //offset postion with pan area
                     if let Some(source_pos) = gates.get(&w.source_id) {
-                        w.set_p1(*source_pos);
+                        let source_pos_moved = *source_pos - pan_center.to_vec2();
+                        w.set_p1(source_pos_moved);
                     }
                 }
 
@@ -219,7 +233,9 @@ impl MyApp {
             }
         }
 
-        // for each out_id, update it's signal
+        // for each out_id that we got, update it's signal
+        let mut input_id_signals: HashMap<usize, bool> = HashMap::new();
+
         for (out_id, out_sig) in outputs {
             let current_output = self
                 .live_data
@@ -240,28 +256,40 @@ impl MyApp {
             // for each wire id, set the wire's signal and destination
             for wire_id in wire_ids.unwrap_or(Vec::new()) {
                 // get the wire by id and set its signal
-                let input_id = if let Some(wire) = self.live_data.get_mut(&wire_id) {
+                input_id_signals.extend(if let Some(wire) = self.live_data.get_mut(&wire_id) {
                     if let Some(wire) = wire.as_any_mut().downcast_mut::<Wire>() {
-                        wire.set_signal(out_sig);
-                        wire.dest
+                        wire.set_signal(out_sig); //set the wire's signal
+                        if let Some(dest) = wire.dest {
+                            // if the wire has a destination, set the signal for that destination
+                            HashMap::from([(dest, out_sig)])
+                        } else {
+                            HashMap::new()
+                        }
                     } else {
-                        None
+                        HashMap::new()
                     }
                 } else {
-                    None
-                };
-
-                if let Some(input_id) = input_id {
-                    if let Some(input) = self.live_data.get_mut(&input_id) {
-                        if let Some(input) = input.as_any_mut().downcast_mut::<Input>() {
-                            input.signal = out_sig;
-                        }
-                    }
-                }
+                    HashMap::new()
+                });
             }
-
-            ctx.request_repaint(); // Request a repaint after ticking
         }
+
+        //for every input
+        let _: HashMap<usize, Input> = self
+            .live_data
+            .iter_mut()
+            .filter_map(|(id, item)| {
+                if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
+                    input.signal = input_id_signals.get(&input.id).cloned().unwrap_or(false);
+                    println!("Updated input: {:?} with signal: {}", id, input.signal);
+                    None
+                } else {
+                    println!("item could not be downcasted, input: {:?}", id);
+                    None
+                }
+            })
+            .collect();
+        ctx.request_repaint(); // Request a repaint after ticking
     }
 
     fn apply_ui_events(&mut self) {
@@ -296,7 +324,7 @@ impl MyApp {
 
                     match kind {
                         LogicalKind::IO(IOKind::Input) => {
-                            println!("Clicked on Input: {:?}", kind);
+                            println!("Left-Clicked on Input: {:?}", kind);
                             //check if this input already has a wire connected
                             let in_wire_id: Option<usize> = self
                                 .live_data
@@ -333,12 +361,15 @@ impl MyApp {
                                         .unwrap()
                                         .source_wire_id = Some(wire_id);
                                 } else {
-                                    println!("No wire to connect to input, holding_wire is None");
+                                    println!(
+                                        "Input: {:?} already has a wire connected, cannot connect another wire",
+                                        id
+                                    );
                                 }
                             }
                         }
                         LogicalKind::IO(IOKind::Output) => {
-                            println!("Clicked on Output: {:?}", id);
+                            println!("Left-Clicked on Output: {:?}", id);
                             if self.holding_wire.is_none() {
                                 println!("Creating wire from clicked IO: {:?}", id);
                                 let new_wire = Wire::from_io(id, pos);
@@ -389,28 +420,54 @@ impl MyApp {
                 UiEvent::ClickedIO(id, pos, false) => {
                     //secondary click on an IO item
                     // If an IO was clicked with a secondary click, if a wire is connected, put wire in hand
+
+                    // let in_wire_id: Option<usize> = self
+                    //     .live_data
+                    //     .get(&id)
+                    //     .unwrap()
+                    //     .as_any()
+                    //     .downcast_ref::<Input>()
+                    //     .unwrap()
+                    //     .source_wire_id;
+
                     if let Some(item) = self.live_data.get_mut(&id) {
                         if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
+                            //if this successfully downcasts to an Input
+                            // If an input was right-clicked, take the wire if it exists
                             if let Some(wire_id) = input.source_wire_id {
                                 // If the input has a wire connected, take it
-                                self.holding_wire = Some(wire_id);
                                 input.source_wire_id = None; // Disconnect the wire from the input
+                                self.holding_wire = Some(wire_id);
                                 println!("Taking wire from Input: {:?}", id);
+                                //set the wires dest to none
+                                if let Some(wire) = self.live_data.get_mut(&wire_id) {
+                                    if let Some(wire) = wire.as_any_mut().downcast_mut::<Wire>() {
+                                        println!("Wire taken from Input: {:?}", id);
+                                        wire.dest = None; // Disconnect the wire from the input
+                                        wire.connected = false; // mark the wire as disconnected
+                                    }
+                                }
+                            } else {
+                                println!("Input: {:?} has no wire connected", id);
                             }
                         } else if let Some(output) = item.as_any_mut().downcast_mut::<Output>() {
-                            //if an output was right-clicked, remove the held wire from its out_wire_ids
+                            //if an output was right-clicked, remove the current held wire from its out_wire_ids
                             if let Some(wire_id) = self.holding_wire {
                                 output.out_wire_ids.retain(|&x| x != wire_id);
                                 self.holding_wire = None;
                                 queued_removal_id = Some(wire_id);
                                 println!("Released wire from Output: {:?}", id);
+                            } else {
+                                println!(
+                                    "Output: {:?} no changes were made because no wire is being held",
+                                    id
+                                );
                             }
                         }
                     }
                 }
                 UiEvent::ClickedWire(_, _, _) => {}
             }
-
         }
         // If we have a queued removal id, remove the item from live
         if let Some(wire_id) = queued_removal_id {
@@ -445,7 +502,10 @@ impl eframe::App for MyApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-
+        if !self.theme_set {
+            self.set_theme(ctx, "assets/skeleton-custom.css");
+            self.theme_set = true;
+        }
         // determine outputs for all logicals based on their inputs and their TERM
         self.apply_ui_events();
         self.update_logicals(ctx);

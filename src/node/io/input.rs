@@ -50,7 +50,7 @@ impl Input {
 
                     Ok(Pos2 {
                         x: pos.x - 50.0, // Offset from the gate's position
-                        y: pos.y - y_offset,
+                        y: pos.y + y_offset,
                     })
                 } else {
                     println!("Parent could not be downcast to a Gate, Operation is not allowed");
@@ -89,9 +89,13 @@ impl Logical for Input {
             return Err("Inputs must have exactly one wire connected".into());
         }
 
-        let (_, signal) = ins.iter().next().unwrap();
+        if let Some((_, signal)) = ins.iter().next(){
+            self.signal = *signal;
+        }
+        else{
+            self.signal = false;
+        }
         //if input is provided, set the signal to the input's value
-        self.signal = *signal;
         Ok(HashMap::new())
     }
 
