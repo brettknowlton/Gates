@@ -188,8 +188,18 @@ impl Logical for Gate {
                                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                     output.show(ui, sender.clone(), live_data, colors);
                                 });
+                            } else {
+                                toggles.push(false);
                             }
                         });
+                    }
+
+                    // Handle toggling outputs
+                    for (index, toggle) in toggles.iter().enumerate() {
+                        if *toggle {
+                            self.outs[index].connected = true;
+                            println!("Connected output: {}", self.outs[index].id);
+                        }
                     }
                 });
             },
@@ -300,7 +310,7 @@ impl Gate {
         };
 
         println!("Created gate: {:?}", new_gate);
-        new_gate
+        Box::new(new_gate)
     }
 
     pub fn create_io(&mut self, live_data: &mut HashMap<usize, Box<dyn Logical>>) {
@@ -373,7 +383,7 @@ impl Gate {
             }
         }
 
-        let g = Gate {
+        let mut g = Gate {
             label,
             position: GridVec2::new(0.0, 0.0),
             id: id,
