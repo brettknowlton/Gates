@@ -260,6 +260,12 @@ impl Gate {
             GateKind::Primitive(PrimitiveKind::AND) => {
                 Gate::from_template(&PrimitiveTemplate::from_values("AND", 2, 1), pos)
             }
+            GateKind::Primitive(PrimitiveKind::XOR) => {
+                Gate::from_template(&PrimitiveTemplate::from_values("XOR", 2, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::NAND) => {
+                Gate::from_template(&PrimitiveTemplate::from_values("NAND", 2, 1), pos)
+            }
             _ => Gate::from_template(&PrimitiveTemplate::from_values("E: Not Found", 1, 1), pos),
         };
 
@@ -322,6 +328,15 @@ impl Gate {
             }
             "AND" => {
                 kind = GateKind::Primitive(PrimitiveKind::AND);
+            }
+            "XOR" => {
+                kind = GateKind::Primitive(PrimitiveKind::XOR);
+            }
+            "NAND" => {
+                kind = GateKind::Primitive(PrimitiveKind::NAND);
+            }
+            "Custom" => {
+                kind = GateKind::Custom;
             }
             _ => {
                 kind = GateKind::Primitive(PrimitiveKind::None);

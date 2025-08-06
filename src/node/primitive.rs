@@ -40,6 +40,12 @@ impl PrimitiveTemplate {
             "AND" => {
                 kind = PrimitiveKind::AND;
             }
+            "XOR" => {
+                kind = PrimitiveKind::XOR;
+            }
+            "NAND" => {
+                kind = PrimitiveKind::NAND;
+            }
             _ => {
                 kind = PrimitiveKind::None;
             }
@@ -166,7 +172,20 @@ impl PrimitiveKind {
                 gate.state = result; // Set gate state based on input
                 Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
             }
-
+            PrimitiveKind::XOR => {
+                // XOR logic, returns true if an odd number of inputs are true
+                let (out_id, _) = gate.outs.iter().next().expect("XOR was ticked but did not have an output"); //get the  id of the (only) output
+                let result = ins.values().filter(|&&v| v).count() % 2 == 1;
+                gate.state = result; // Set gate state based on input
+                Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
+            }
+            PrimitiveKind::NAND => {
+                // NAND logic, returns true if not all inputs are true
+                let (out_id, _) = gate.outs.iter().next().expect("NAND was ticked but did not have an output"); //get the  id of the (only) output
+                let result = !ins.values().all(|&v| v);
+                gate.state = result; // Set gate state based on input
+                Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
+            }
             _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
         }
     }
