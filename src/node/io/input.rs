@@ -50,7 +50,7 @@ impl Input {
 
                     Ok(Pos2 {
                         x: pos.x - 50.0, // Offset from the gate's position
-                        y: pos.y + y_offset,
+                        y: pos.y - y_offset,
                     })
                 } else {
                     println!("Parent could not be downcast to a Gate, Operation is not allowed");
@@ -130,13 +130,22 @@ impl Logical for Input {
             let btn = Button::new("<")
                 .fill(button_color)
                 .min_size(vec2(18.0, 18.0));
+            let response = ui.add(btn);
+            let mouse_pos = ui
+                .ctx()
+                .input(|i| i.pointer.hover_pos().unwrap_or_default());
 
-            if ui.add(btn).clicked() {
-                let cursor_pos = ui
-                    .ctx()
-                    .input(|i| i.pointer.hover_pos().unwrap_or_default());
+            if response.clicked_by(PointerButton::Primary) {
+                // Handle secondary click (right-click)
                 sender
-                    .try_send(UiEvent::ClickedIO(self.id, cursor_pos))
+                    .try_send(UiEvent::ClickedIO(self.id, mouse_pos, true))
+                    .unwrap_or_else(|_| {
+                        println!("Failed to send ClickedIO event");
+                    });
+            } else if response.clicked_by(PointerButton::Secondary) {
+                // Handle secondary click (right-click)
+                sender
+                    .try_send(UiEvent::ClickedIO(self.id, mouse_pos, false))
                     .unwrap_or_else(|_| {
                         println!("Failed to send ClickedIO event");
                     });

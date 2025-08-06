@@ -13,6 +13,7 @@ pub trait Logical: AsAny {
         println!();
         Err("Tick not implemented for this type".into())
     }
+    
     fn get_position(&self) -> Result<Pos2, Box<dyn Error>> {
         println!("get_position not implemented for this type");
         Err(Box::new(InvalidOperationError))
@@ -65,7 +66,7 @@ impl LogicalKind {
     pub fn is_primitive(&self) -> bool {
         matches!(self, LogicalKind::Gate(GateKind::Primitive(_)))
     }
-    
+
     pub fn is_primitive_kind(&self, kind: PrimitiveKind) -> bool {
         if let LogicalKind::Gate(GateKind::Primitive(primitive_kind)) = self {
             *primitive_kind == kind

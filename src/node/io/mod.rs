@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::{ MyApp, node::InvalidOperationError, UiEvent};
 
-pub use eframe::egui::{Align};
+pub use eframe::egui::{Align, PointerButton};
 
 pub use crossbeam::channel::Sender;
 

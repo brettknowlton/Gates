@@ -1,3 +1,5 @@
+
+
 use super::*;
 
 use std::collections::HashMap;
@@ -149,11 +151,18 @@ impl Logical for Output {
                 .fill(button_color)
                 .min_size(vec2(18.0, 18.0));
 
-            let mouse_pos = ui.ctx().input(|i| i.pointer.hover_pos());
-
-            if ui.add(btn).clicked() {
+            let mouse_pos = ui.ctx().input(|i| i.pointer.hover_pos()).unwrap_or_default();
+            let response= ui.add(btn);
+            if response.clicked_by(PointerButton::Primary) {
                 sender
-                    .try_send(UiEvent::ClickedIO(self.id, mouse_pos.unwrap()))
+                    .try_send(UiEvent::ClickedIO(self.id, mouse_pos, true))
+                    .unwrap_or_else(|_| {
+                        println!("Failed to send ClickedIO event");
+                    });
+            }else if response.clicked_by(PointerButton::Secondary) {
+                // Handle secondary click (right-click)
+                sender
+                    .try_send(UiEvent::ClickedIO(self.id, mouse_pos, false))
                     .unwrap_or_else(|_| {
                         println!("Failed to send ClickedIO event");
                     });

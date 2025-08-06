@@ -60,9 +60,9 @@ pub struct MyApp {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum UiEvent {
-    ClickedGate(usize, Pos2), // id of the gate that was clicked
-    ClickedWire(usize, Pos2), // id of the wire that was clicked
-    ClickedIO(usize, Pos2),   // id of clicked input or output
+    ClickedGate(usize, Pos2, bool), // id of the gate that was clicked, its position, and if it was a primary click
+    ClickedWire(usize, Pos2, bool), // id of the wire that was clicked, its position, and if it was a primary click
+    ClickedIO(usize, Pos2, bool), // id of clicked input or output, its position, and if it was a primary click
 }
 
 impl Default for MyApp {
@@ -178,7 +178,9 @@ impl MyApp {
         }
     }
 
-    fn collect_pre_inputs(data_vals: &mut HashMap<usize, Box<dyn Logical>>) -> HashMap<usize, Input> {
+    fn collect_pre_inputs(
+        data_vals: &mut HashMap<usize, Box<dyn Logical>>,
+    ) -> HashMap<usize, Input> {
         data_vals
             .iter_mut()
             .filter_map(|(id, item)| {
@@ -264,11 +266,13 @@ impl MyApp {
 
     fn apply_ui_events(&mut self) {
         // Process UI events from the receiver
+        let mut queued_removal_id: Option<usize> = None;
+
         if let Ok(clicked) = self.event_receiver.try_recv() {
             // an output was clicked, so we want to create a wire if we are not currently holding a wire
             //lookup the type of the clicked IO by its id in the live_data map
             match clicked {
-                UiEvent::ClickedGate(id, _) => {
+                UiEvent::ClickedGate(id, _, true) => {
                     // If a gate was clicked, toggle its state
                     if let Some(item) = self.live_data.get_mut(&id) {
                         if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
@@ -277,7 +281,17 @@ impl MyApp {
                         }
                     }
                 }
-                UiEvent::ClickedIO(id, pos) => {
+                UiEvent::ClickedGate(id, _, false) => {
+                    // If a gate was clicked with a secondary click, show its context menu
+                    // if let Some(item) = self.live_data.get_mut(&id) {
+                    //     if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
+                    //         println!("Right-clicked on Gate: {:?}", id);
+                    //         gate.show_context_menu();
+                    //     }
+                    // }
+                }
+                UiEvent::ClickedIO(id, pos, true) => {
+                    //primary click on an IO item
                     let kind = self.live_data.get(&id).unwrap().get_kind();
 
                     match kind {
@@ -372,7 +386,51 @@ impl MyApp {
                         }
                     }
                 }
-                UiEvent::ClickedWire(_, _) => {}
+                UiEvent::ClickedIO(id, pos, false) => {
+                    //secondary click on an IO item
+                    // If an IO was clicked with a secondary click, if a wire is connected, put wire in hand
+                    if let Some(item) = self.live_data.get_mut(&id) {
+                        if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
+                            if let Some(wire_id) = input.source_wire_id {
+                                // If the input has a wire connected, take it
+                                self.holding_wire = Some(wire_id);
+                                input.source_wire_id = None; // Disconnect the wire from the input
+                                println!("Taking wire from Input: {:?}", id);
+                            }
+                        } else if let Some(output) = item.as_any_mut().downcast_mut::<Output>() {
+                            //if an output was right-clicked, remove the held wire from its out_wire_ids
+                            if let Some(wire_id) = self.holding_wire {
+                                output.out_wire_ids.retain(|&x| x != wire_id);
+                                self.holding_wire = None;
+                                queued_removal_id = Some(wire_id);
+                                println!("Released wire from Output: {:?}", id);
+                            }
+                        }
+                    }
+                }
+                UiEvent::ClickedWire(_, _, _) => {}
+            }
+
+        }
+        // If we have a queued removal id, remove the item from live
+        if let Some(wire_id) = queued_removal_id {
+            if let Some(mut item) = self.live_data.remove(&wire_id) {
+                if let Some(wire) = item.as_any_mut().downcast_mut::<Wire>() {
+                    // Remove the wire from any connected inputs
+                    if let Some(input_id) = wire.dest {
+                        if let Some(input) = self.live_data.get_mut(&input_id) {
+                            if let Some(input) = input.as_any_mut().downcast_mut::<Input>() {
+                                input.source_wire_id = None; // Disconnect the wire from the input
+                            }
+                        }
+                    }
+                    // Remove the wire from any connected outputs
+                    if let Some(item2) = self.live_data.get_mut(&wire.source_id) {
+                        if let Some(output) = item2.as_any_mut().downcast_mut::<Output>() {
+                            output.out_wire_ids.retain(|&x| x != wire_id); // Remove the wire from the output
+                        }
+                    }
+                }
             }
         }
     }
@@ -570,6 +628,7 @@ impl eframe::App for MyApp {
                                                     ui.ctx().input(|i| {
                                                         i.pointer.hover_pos().unwrap_or_default()
                                                     }),
+                                                    true,
                                                 ))
                                                 .unwrap();
                                         }
