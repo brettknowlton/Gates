@@ -22,7 +22,7 @@ use egui_dnd::dnd;
 use serde;
 
 const TITLE_BAR_HEIGHT: f32 = 30.0;
-const SIDE_PANEL_WIDTH: f32 = 400.0;
+const SIDE_PANEL_WIDTH: f32 = 200.0;
 
 static mut NEXT_ID: usize = 0; // static variable to generate unique ids for gates and wires
 
@@ -460,8 +460,8 @@ impl eframe::App for MyApp {
 
             // println!("Primitive gates: {:?}", self.primitive_gates);
             ui.horizontal_centered(|ui| {
-                dnd(ui, "Primitive").show_vec(
-                    &mut self.prim_templates,
+                dnd(ui, "Primitive").show(
+                    &mut self.prim_templates.iter(),
                     |ui, item, handle, _state| {
                         handle.ui(ui, |ui| {
                             let w = ui.add(item.make_toolbox_widget());
@@ -571,9 +571,7 @@ impl eframe::App for MyApp {
                                                         i.pointer.hover_pos().unwrap_or_default()
                                                     }),
                                                 ))
-                                                .unwrap_or(println!(
-                                                    "Failed to send ClickedGate event"
-                                                ));
+                                                .unwrap();
                                         }
                                     })
                                     .response

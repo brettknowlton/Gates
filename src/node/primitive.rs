@@ -101,20 +101,20 @@ impl PrimitiveKind {
             PrimitiveKind::HISIGNAL => {
                 //HI-SIGNAL always outputs true
                 println!("Ticking HISIGNAL, setting output to true");
-                let (id, _) = gate.outs.iter().next().unwrap();
+                let (out_id, _) = gate.outs.iter().next().unwrap();
                 gate.state = true; // Set gate state to true
-                Ok(HashMap::from([(*id, true)]))
+                Ok(HashMap::from([(*out_id, true)]))
             }
             PrimitiveKind::LOSIGNAL => {
                 // LO-SIGNAL always outputs false
-                let (id, _) = gate.outs.iter().next().unwrap();
+                let (out_id, _) = gate.outs.iter().next().unwrap();
                 gate.state = false; // Set gate state to false
-                Ok(HashMap::from([(*id, false)]))
+                Ok(HashMap::from([(*out_id, false)]))
             }
             PrimitiveKind::BUFFER => {
                 // BUFFER logic, for example, passes the signal through
                 //ensure only one input
-                let (out_id, _) = gate.outs.iter().next().expect("BUFFER was ticked but did not have an output"); //get the  id of the (only) output
+                let (out_id, _) = gate.outs.iter().next().unwrap(); //get the  id of the (only) output
                 if let Some((_, signal)) = ins.iter().next() {
                     Ok(HashMap::from([(*out_id, *signal)])) // Assuming single output at index 0
                 } else {
@@ -122,15 +122,14 @@ impl PrimitiveKind {
                 }
             }
             PrimitiveKind::LIGHT => {
-                // LIGHT has no outputs, for example, always outputs empty map
                 gate.state = ins.values().next().cloned().unwrap_or(false); // Set gate state based on input
-                // ctx.request_repaint();
-                Ok(HashMap::new())
+                Ok(HashMap::new())// No output, just update state
             }
             PrimitiveKind::PULSE => {
+                // 1-Tick pulse creator, on rising edge of any pulse (or click) it will send a true signal for one tick
+                // and then set self state to false
                 let (out_id, _) = gate.outs.iter().next().expect("PULSE was ticked but did not have an output"); //get the  id of the (only) output
-                if gate.state {
-                    //set state to false and send a true signal
+                if gate.state {//set state to false and send a true signal
                     gate.state = false;
                     Ok(HashMap::from([(*out_id, true)])) // Assuming single output at index 0
                 } else {
@@ -139,14 +138,9 @@ impl PrimitiveKind {
                 }
             }
             PrimitiveKind::TOGGLE => {
-                // pretty much the same as PULSE but doesnt reset its own state
+                // pretty much the same as PULSE but doesnt handle its own state, instead state is handled externally by user input
                 let (out_id, _) = gate.outs.iter().next().expect("TOGGLE was ticked but did not have an output");
-                if let Some((_, signal)) = ins.iter().next() {
-                    gate.state = *signal; // Set gate state based on input
-                    Ok(HashMap::from([(*out_id, gate.state)])) // Assuming single output at index 0
-                } else {
-                    return Err("Input signal not found".into());
-                }
+                Ok(HashMap::from([(*out_id, gate.state)])) // Assuming single output at index 0
             }
 
             PrimitiveKind::NOT => {
@@ -162,6 +156,13 @@ impl PrimitiveKind {
                 // OR logic, returns true if any input is true
                 let (out_id, _) = gate.outs.iter().next().expect("OR was ticked but did not have an output"); //get the  id of the (only) output
                 let result = ins.values().any(|&v| v);
+                gate.state = result; // Set gate state based on input
+                Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
+            }
+            PrimitiveKind::AND => {
+                // AND logic, returns true if all inputs are true
+                let (out_id, _) = gate.outs.iter().next().expect("AND was ticked but did not have an output"); //get the  id of the (only) output
+                let result = ins.values().all(|&v| v);
                 gate.state = result; // Set gate state based on input
                 Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
             }
