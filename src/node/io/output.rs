@@ -138,13 +138,14 @@ impl Logical for Output {
         ui: &mut Ui,
         sender: Sender<UiEvent>,
         _live_data: &HashMap<usize, Box<dyn Logical>>,
+        colors: &HashMap<String, Color32>,
     ) -> Response {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
             let button_color: Color32;
             if self.signal {
-                button_color = HI_COLOR;
+                button_color = colors.get(HI_SIGNAL_COLOR).unwrap_or(&Color32::GREEN).clone();
             } else {
-                button_color = LO_COLOR;
+                button_color = colors.get(LO_SIGNAL_COLOR).unwrap_or(&Color32::RED).clone();
             }
 
             let btn = Button::new(">")

@@ -112,6 +112,7 @@ impl Logical for Wire {
         ui: &mut Ui,
         _sender: Sender<UiEvent>,
         _live_data: &HashMap<usize, Box<dyn Logical>>,
+        colors: &HashMap<String, Color32>,
     ) -> Response {
         let response = ui.allocate_rect(
             Rect::from_min_max(self.line.p1, self.line.p2),
@@ -119,9 +120,9 @@ impl Logical for Wire {
         );
 
         let color = if self.signal {
-            HI_COLOR
+            colors.get(HI_SIGNAL_COLOR).unwrap_or(&Color32::DARK_GREEN).clone()
         } else {
-            LO_COLOR
+            colors.get(LO_SIGNAL_COLOR).unwrap_or(&Color32::GRAY).clone()
         };
         //if wire is connected, update the line's end points to be the current source -> destination positions
         if self.connected {}

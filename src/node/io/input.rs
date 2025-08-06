@@ -1,3 +1,5 @@
+use eframe::glow::COLOR_COMPONENTS;
+
 use super::*;
 
 use std::collections::HashMap;
@@ -127,9 +129,14 @@ impl Logical for Input {
         ui: &mut Ui,
         sender: Sender<UiEvent>,
         _live_data: &HashMap<usize, Box<dyn Logical>>,
+        colors: &HashMap<String, Color32>,
     ) -> Response {
         ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-            let button_color = if self.signal { HI_COLOR } else { LO_COLOR };
+            let button_color = if self.signal {
+                colors.get(HI_SIGNAL_COLOR).cloned().unwrap_or(Color32::from_rgb(0, 255, 0))
+            }else{
+                colors.get(LO_SIGNAL_COLOR).cloned().unwrap_or(Color32::from_rgb(255, 0, 0))
+            };
 
             let btn = Button::new("<")
                 .fill(button_color)

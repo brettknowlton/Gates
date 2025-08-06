@@ -30,6 +30,7 @@ pub trait Logical: AsAny {
         ui: &mut Ui,
         sender: Sender<UiEvent>,
         live_data: &HashMap<usize, Box<dyn Logical>>,
+        colors: &HashMap<String, Color32>,
     ) -> Response;
     fn click_on(&mut self) {
         // Default implementation, can be overridden by specific logical types

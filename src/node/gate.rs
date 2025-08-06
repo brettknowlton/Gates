@@ -1,5 +1,5 @@
-use crate::{MyApp, UiEvent};
 use crate::node::io::*;
+use crate::{MyApp, UiEvent};
 
 use super::*;
 
@@ -62,49 +62,54 @@ impl Logical for Gate {
         ui: &mut Ui,
         sender: Sender<UiEvent>,
         live_data: &HashMap<usize, Box<dyn Logical>>,
+        colors: &HashMap<String, Color32>,
     ) -> Response {
         let size = Vec2::new(GATE_WIDTH, 50.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
 
         let checkbox_height = ui.spacing().interact_size.y;
-        
-        let mut accent_color: Color32= Color32::GRAY;
-        let mut fill_color: Color32 = Color32::LIGHT_GRAY;
 
-        match self.kind{
+        let mut fill_color: Color32 = ui.style().visuals.widgets.inactive.bg_fill;
+        let mut accent_color: Color32 = ui.style().visuals.widgets.inactive.weak_bg_fill;
+
+        match self.kind {
             GateKind::Primitive(PrimitiveKind::HISIGNAL) => {
-                accent_color = HI_COLOR;
-                fill_color = Color32::from_rgb(0, 255, 0);
+                fill_color = colors
+                    .get(HI_SIGNAL_COLOR)
+                    .cloned()
+                    .unwrap_or(Color32::from_rgb(0, 255, 0));
+                accent_color = colors
+                    .get(HI_ACCENT_COLOR)
+                    .cloned()
+                    .unwrap_or(Color32::from_rgb(0, 127, 0));
             }
             GateKind::Primitive(PrimitiveKind::LOSIGNAL) => {
-                accent_color = LO_COLOR;
-                fill_color = Color32::from_rgb(255, 0, 0);
+                fill_color = colors
+                    .get(LO_SIGNAL_COLOR)
+                    .cloned()
+                    .unwrap_or(Color32::from_rgb(255, 0, 0));
+                accent_color = colors
+                    .get(LO_ACCENT_COLOR)
+                    .cloned()
+                    .unwrap_or(Color32::from_rgb(127, 0, 0));
             }
-            GateKind::Primitive(PrimitiveKind::PULSE) => {
-                accent_color = Color32::from_rgb(255, 165, 0);
-                fill_color = Color32::from_rgb(255, 255, 224);
-            }
-            GateKind::Primitive(PrimitiveKind::TOGGLE) => {
+            GateKind::Primitive(PrimitiveKind::PULSE)
+            | GateKind::Primitive(PrimitiveKind::TOGGLE) => {
                 if self.state {
-                    accent_color = Color32::from_rgb(0, 0, 255);
-                    fill_color = Color32::from_rgb(224, 224, 255);
+                    accent_color = ui.style().visuals.widgets.active.bg_fill;
                 } else {
-                    accent_color = Color32::from_rgb(128, 128, 128);
-                    fill_color = Color32::from_rgb(200, 200, 200);
+                    accent_color = ui.style().visuals.widgets.inactive.bg_fill;
                 }
+                fill_color = ui.style().visuals.widgets.inactive.weak_bg_fill;
             }
             GateKind::Primitive(PrimitiveKind::LIGHT) => {
                 if self.state {
-                    accent_color = Color32::from_rgb(255, 255, 0);
-                    fill_color = Color32::from_rgb(255, 255, 224);
-                } else {
-                    accent_color = Color32::from_rgb(128, 128, 128);
-                    fill_color = Color32::from_rgb(200, 200, 200);
+                    accent_color = ui.style().visuals.selection.bg_fill;
                 }
+                fill_color = ui.style().visuals.widgets.inactive.weak_bg_fill;
             }
             _ => {}
         }
-
 
         // Draw the bounding box
         ui.painter().rect(
@@ -145,7 +150,7 @@ impl Logical for Gate {
                         live_data.get(id).map(|input_logical| {
                             if let Some(input) = input_logical.as_any().downcast_ref::<Input>() {
                                 ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                                    input.show(ui, sender.clone(), live_data);
+                                    input.show(ui, sender.clone(), live_data, colors);
                                 });
                             }
                         });
@@ -155,8 +160,7 @@ impl Logical for Gate {
         );
 
         // CENTER - Label only
-        ui.painter()
-            .rect_filled(center_rect, 0.0, fill_color);
+        ui.painter().rect_filled(center_rect, 0.0, fill_color);
         ui.painter().text(
             center_rect.center(),
             Align2::CENTER_CENTER,
@@ -182,7 +186,7 @@ impl Logical for Gate {
                         live_data.get(&output.0).map(|input_logical| {
                             if let Some(output) = input_logical.as_any().downcast_ref::<Output>() {
                                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                    output.show(ui, sender.clone(), live_data);
+                                    output.show(ui, sender.clone(), live_data, colors);
                                 });
                             }
                         });
@@ -388,8 +392,6 @@ impl Gate {
     }
 }
 
-
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Deserialize, serde::Serialize)]
 pub enum GateKind {
     #[default]
@@ -407,7 +409,6 @@ impl Display for GateKind {
         }
     }
 }
-
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state

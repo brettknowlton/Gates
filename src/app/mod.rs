@@ -17,7 +17,8 @@ pub use theme::SkeletonTheme;
 
 use eframe::{
     self,
-    egui::{Context, Pos2, Ui, UiBuilder},
+    egui::{Align, Context, Pos2, Theme, Ui, UiBuilder},
+    glow::LEFT,
     *,
 };
 
@@ -40,8 +41,12 @@ pub struct MyApp {
 
     files_loaded: bool,
     theme_set: bool,
+    color_values: HashMap<String, Color32>,
+
     prim_templates: Vec<PrimitiveTemplate>,
     saved: Vec<PrimitiveTemplate>,
+    #[serde(skip)]
+    available_themes: Vec<SkeletonTheme>,
 
     current_chip: Option<PathBuf>,
 
@@ -78,9 +83,11 @@ impl Default for MyApp {
             value: 2.7,
             files_loaded: false,
             theme_set: false,
+            color_values: HashMap::new(),
 
             prim_templates: Vec::new(),
             saved: Vec::new(),
+            available_themes: Vec::new(),
 
             current_chip: None,
             live_data: HashMap::<usize, Box<dyn Logical>>::new(),
@@ -112,14 +119,33 @@ impl MyApp {
 
         new.event_sender = event_sender;
         new.event_receiver = event_receiver;
+        new.load_themes();
         new.load_data()
     }
 
-    pub fn set_theme(&mut self, ctx: &Context, path: &str) {
-        match SkeletonTheme::from_css_file(path) {
-            Ok(theme) => theme.apply(ctx),
-            Err(err) => eprintln!("Failed to load theme: {err}"),
+    pub fn load_themes(&mut self) {
+        //for item in ../../assets/*
+        let theme_dir = PathBuf::from("assets/");
+        if let Ok(entries) = std::fs::read_dir(theme_dir) {
+            for entry in entries.flatten() {
+                if let Some(path) = entry.path().to_str() {
+                    if path.ends_with(".css") {
+                        if let Ok(theme) = SkeletonTheme::from_css_file(path) {
+                            println!("Loaded theme: {}", path);
+                            self.available_themes.push(theme);
+                        } else {
+                            eprintln!("Failed to load theme from: {}", path);
+                        }
+                    }
+                }
+            }
+        } else {
+            eprintln!("Failed to read theme directory");
         }
+    }
+    pub fn set_theme(&mut self, ctx: &Context, theme: &SkeletonTheme) {
+        theme.apply(ctx);
+        self.color_values = theme.colors.clone();
     }
 
     fn load_data(mut self) -> Self {
@@ -192,104 +218,119 @@ impl MyApp {
         }
     }
 
-    fn collect_pre_inputs(
-        data_vals: &mut HashMap<usize, Box<dyn Logical>>,
-    ) -> HashMap<usize, Input> {
-        data_vals
-            .iter_mut()
+    fn update_logicals(&mut self, ctx: &Context) {
+        // Update the logical states of all gates and wires
+
+        // Step 1: Collect all inputs and their current states
+        let input_states = self.collect_input_states();
+
+        // Step 2: Process all gates and collect their outputs
+        let gate_outputs = self.process_gates(&input_states);
+
+        // Step 3: Update outputs and propagate through wires
+        let wire_signals = self.update_outputs_and_wires(&gate_outputs);
+
+        // Step 4: Apply wire signals to inputs
+        self.apply_wire_signals_to_inputs(&wire_signals);
+
+        ctx.request_repaint();
+    }
+
+    fn collect_input_states(&self) -> HashMap<usize, bool> {
+        self.live_data
+            .iter()
             .filter_map(|(id, item)| {
-                if let Some(input) = item.as_any().downcast_ref::<Input>() {
-                    Some((*id, input.clone()))
-                } else {
-                    None
-                }
+                item.as_any()
+                    .downcast_ref::<Input>()
+                    .map(|input| (*id, input.signal))
             })
             .collect()
     }
 
-    fn update_logicals(&mut self, ctx: &Context) {
-        // Update the logical states of all gates and wires
+    fn process_gates(&mut self, input_states: &HashMap<usize, bool>) -> HashMap<usize, bool> {
+        let mut gate_outputs = HashMap::new();
 
-        let pre_ins = Self::collect_pre_inputs(&mut self.live_data);
-
-        //for each gate
-        let mut outputs: HashMap<usize, bool> = HashMap::new();
-        for (id, item) in self.live_data.iter_mut() {
-            // gather relevant inputs
+        for (_gate_id, item) in self.live_data.iter_mut() {
             if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
-                let gate_ins = pre_ins
-                    .iter()
-                    .filter_map(|(input_id, input)| {
-                        // if the input is connected to this gate, return it
-                        if gate.ins.contains_key(input_id) {
-                            Some((*input_id, input.signal))
-                        } else {
-                            None
-                        }
+                // Gather inputs for this specific gate
+                let gate_inputs: HashMap<usize, bool> = gate
+                    .ins
+                    .keys()
+                    .filter_map(|input_id| {
+                        input_states
+                            .get(input_id)
+                            .map(|&signal| (*input_id, signal))
                     })
-                    .collect::<HashMap<usize, bool>>();
-                // tick gate with inputs and return outputs (out_id, out_sig)
-                outputs.extend(item.tick(gate_ins).unwrap_or(HashMap::new()));
-            }
-        }
+                    .collect();
 
-        // for each out_id that we got, update it's signal
-        let mut input_id_signals: HashMap<usize, bool> = HashMap::new();
-
-        for (out_id, out_sig) in outputs {
-            let current_output = self
-                .live_data
-                .get_mut(&out_id)
-                .and_then(|item| item.as_any_mut().downcast_mut::<Output>());
-            if let Some(output) = current_output {
-                // set the output's signal
-                output.signal = out_sig;
-            }
-
-            //get all wire ids connected to this output
-            let wire_ids = self
-                .live_data
-                .get_mut(&out_id)
-                .and_then(|item| item.as_any_mut().downcast_mut::<Output>())
-                .map(|out| out.out_wire_ids.clone());
-
-            // for each wire id, set the wire's signal and destination
-            for wire_id in wire_ids.unwrap_or(Vec::new()) {
-                // get the wire by id and set its signal
-                input_id_signals.extend(if let Some(wire) = self.live_data.get_mut(&wire_id) {
-                    if let Some(wire) = wire.as_any_mut().downcast_mut::<Wire>() {
-                        wire.set_signal(out_sig); //set the wire's signal
-                        if let Some(dest) = wire.dest {
-                            // if the wire has a destination, set the signal for that destination
-                            HashMap::from([(dest, out_sig)])
-                        } else {
-                            HashMap::new()
-                        }
-                    } else {
-                        HashMap::new()
-                    }
-                } else {
-                    HashMap::new()
-                });
-            }
-        }
-
-        //for every input
-        let _: HashMap<usize, Input> = self
-            .live_data
-            .iter_mut()
-            .filter_map(|(id, item)| {
-                if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
-                    input.signal = input_id_signals.get(&input.id).cloned().unwrap_or(false);
-                    println!("Updated input: {:?} with signal: {}", id, input.signal);
-                    None
-                } else {
-                    println!("item could not be downcasted, input: {:?}", id);
-                    None
+                // Process gate and collect outputs
+                if let Ok(outputs) = item.tick(gate_inputs) {
+                    gate_outputs.extend(outputs);
                 }
-            })
-            .collect();
-        ctx.request_repaint(); // Request a repaint after ticking
+            }
+        }
+
+        gate_outputs
+    }
+
+    fn update_outputs_and_wires(
+        &mut self,
+        gate_outputs: &HashMap<usize, bool>,
+    ) -> HashMap<usize, bool> {
+        let mut input_signals = HashMap::new();
+
+        for (&output_id, &signal) in gate_outputs {
+            // Update the output signal
+            if let Some(output) = self.get_output_mut(output_id) {
+                output.signal = signal;
+
+                // Process all wires connected to this output
+                let wire_ids = output.out_wire_ids.clone();
+                for wire_id in wire_ids {
+                    if let Some(wire) = self.get_wire_mut(wire_id) {
+                        wire.set_signal(signal);
+
+                        // If wire has a destination, record the signal for that input
+                        if let Some(dest_input_id) = wire.dest {
+                            input_signals.insert(dest_input_id, signal);
+                        }
+                    }
+                }
+            }
+        }
+
+        input_signals
+    }
+
+    fn apply_wire_signals_to_inputs(&mut self, wire_signals: &HashMap<usize, bool>) {
+        for (input_id, &signal) in wire_signals {
+            if let Some(input) = self.get_input_mut(*input_id) {
+                input.signal = signal;
+                println!("Updated input: {:?} with signal: {}", input_id, signal);
+            }
+        }
+    }
+
+    // Helper methods for cleaner access
+    fn get_output_mut(&mut self, id: usize) -> Option<&mut Output> {
+        self.live_data
+            .get_mut(&id)?
+            .as_any_mut()
+            .downcast_mut::<Output>()
+    }
+
+    fn get_wire_mut(&mut self, id: usize) -> Option<&mut Wire> {
+        self.live_data
+            .get_mut(&id)?
+            .as_any_mut()
+            .downcast_mut::<Wire>()
+    }
+
+    fn get_input_mut(&mut self, id: usize) -> Option<&mut Input> {
+        self.live_data
+            .get_mut(&id)?
+            .as_any_mut()
+            .downcast_mut::<Input>()
     }
 
     fn apply_ui_events(&mut self) {
@@ -309,7 +350,7 @@ impl MyApp {
                         }
                     }
                 }
-                UiEvent::ClickedGate(id, _, false) => {
+                UiEvent::ClickedGate(_id, _, false) => {
                     // If a gate was clicked with a secondary click, show its context menu
                     // if let Some(item) = self.live_data.get_mut(&id) {
                     //     if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
@@ -417,7 +458,7 @@ impl MyApp {
                         }
                     }
                 }
-                UiEvent::ClickedIO(id, pos, false) => {
+                UiEvent::ClickedIO(id, _pos, false) => {
                     //secondary click on an IO item
                     // If an IO was clicked with a secondary click, if a wire is connected, put wire in hand
 
@@ -502,8 +543,9 @@ impl eframe::App for MyApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
+        let theme = self.available_themes.first().unwrap().clone();
         if !self.theme_set {
-            self.set_theme(ctx, "assets/skeleton-custom.css");
+            self.set_theme(ctx, &theme);
             self.theme_set = true;
         }
         // determine outputs for all logicals based on their inputs and their TERM
@@ -562,15 +604,31 @@ impl eframe::App for MyApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
+
+                let mut next_themes = Vec::new();
+                let themes = self.available_themes.clone();
+
                 ui.menu_button("Themes", |ui| {
-                    egui::widgets::global_theme_preference_buttons(ui);
+                    next_themes = themes
+                        .iter()
+                        .filter_map(|x| {
+                            ui.add_space(16.0);
+                            if ui.button(&x.name).clicked() {
+                                Some(x)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
                 });
-                ui.add_space(16.0);
+                if let Some(theme) = next_themes.first() {
+                    self.set_theme(ctx, theme);
+                }
             });
         });
 
         egui::TopBottomPanel::top("Primitive Library").show(ctx, |ui| {
-            ui.set_min_height(150.);
+            ui.set_max_height(150.);
             ui.horizontal(|ui| {
                 ui.set_min_height(15.);
                 ui.label("Primitive Gates");
@@ -624,6 +682,55 @@ impl eframe::App for MyApp {
                     },
                 );
             });
+            ui.horizontal(|ui| {
+                ui.set_min_height(15.);
+                //create a left-justified button to clear the board
+
+                //left half rect:
+                let left_half_rect = ui.available_rect_before_wrap();
+                let left_half_rect = egui::Rect::from_min_size(
+                    left_half_rect.min,
+                    egui::vec2(left_half_rect.width() / 2.0, left_half_rect.height()),
+                );
+
+                ui.scope_builder(UiBuilder::new().max_rect(left_half_rect), |ui| {
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.vertical(|ui| {
+                            if ui.button("Save Board").clicked() {
+                                // Clear the live data
+                                self.live_data.clear();
+                                self.pan_center = Pos2::new(0.0, 0.0);
+                                self.dragging_gate = None;
+                                self.holding_wire = None;
+                                println!("Cleared the board");
+                            }
+                        });
+                    })
+                });
+
+                //right half rect
+                let right_half_rect = ui.available_rect_before_wrap();
+                let right_half_rect = egui::Rect::from_min_size(
+                    right_half_rect.min + egui::vec2(left_half_rect.width(), 0.0),
+                    egui::vec2(right_half_rect.width() / 2.0, right_half_rect.height()),
+                );
+
+                ui.scope_builder(UiBuilder::new().max_rect(right_half_rect), |ui| {
+                    ui.with_layout(Layout::top_down(Align::Max), |ui| {
+                        ui.vertical(|ui| {
+                            if ui.button("Clear Board").clicked() {
+                                // Clear the live data
+                                self.live_data.clear();
+                                self.pan_center = Pos2::new(0.0, 0.0);
+                                self.dragging_gate = None;
+                                self.holding_wire = None;
+                                println!("Cleared the board");
+                            }
+                        });
+                    })
+                });
+
+            });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -669,6 +776,7 @@ impl eframe::App for MyApp {
                                             ui,
                                             self.event_sender.clone(),
                                             &self.live_data,
+                                            &self.color_values,
                                         );
                                         if response.drag_started()
                                             && ui.input(|i| !i.key_down(egui::Key::Space))
@@ -706,6 +814,7 @@ impl eframe::App for MyApp {
                                             ui,
                                             self.event_sender.clone(),
                                             &self.live_data,
+                                            &self.color_values,
                                         );
                                     })
                                     .response
