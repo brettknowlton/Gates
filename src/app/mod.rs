@@ -17,8 +17,7 @@ pub use theme::SkeletonTheme;
 
 use eframe::{
     self,
-    egui::{Align, Context, Pos2, Theme, Ui, UiBuilder},
-    glow::LEFT,
+    egui::{Align, Context, Pos2, Ui, UiBuilder},
     *,
 };
 
@@ -745,15 +744,15 @@ impl eframe::App for MyApp {
                 &self.dragging_gate.is_some(),
                 |ui: &mut egui::Ui, pan_center: Pos2| {
                     // Pre-process: collect gate output positions for wire updates
-                    let mut gate_outputs = std::collections::HashMap::new();
-                    for item in self.live_data.iter() {
-                        if let Some(gate) = item.as_any().downcast_ref::<Gate>() {
-                            for (output_index, output) in gate.outs.iter().enumerate() {
-                                let output_pos = output.get_position_with_parent(gate.get_position(), gate.n_out);
-                                gate_outputs.insert((gate.id, output_index), output_pos);
-                            }
-                        }
-                    }
+                    // let mut gate_outputs = std::collections::HashMap::new();
+                    // for (id, item) in self.live_data.iter() {
+                    //     if let Some(gate) = item.as_any().downcast_ref::<Gate>() {
+                    //         for (id, output) in gate.outs.iter() {
+                    //             let output_pos = output.get_position_with_parent(gate.get_position(), gate.n_out);
+                    //             gate_outputs.insert((gate.id, output_index), output_pos);
+                    //         }
+                    //     }
+                    // }
                     
                     // draw logic here using `pan_center`
                     // Collect the keys first to avoid borrowing issues

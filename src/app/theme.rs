@@ -1,10 +1,9 @@
-use std::{collections::HashMap, string};
+use std::{collections::HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 
 use eframe::egui::style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets};
-use eframe::egui::{vec2, Shadow, Stroke};
-use eframe::epaint::tessellator::path;
+use eframe::egui::{Shadow, Stroke};
 use eframe::epaint::AlphaFromCoverage;
 use eframe::{egui::{Color32, Context, FontDefinitions, Visuals}};
 use palette::{oklch::Oklch, oklab::Oklab, IntoColor, Srgb as LinSrgb};
