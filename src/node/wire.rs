@@ -88,27 +88,8 @@ impl Wire {
 }
 
 impl Logical for Wire {
-    fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
-        //error if more than one input is provided
-        if ins.len() > 1 {
-            return Err(Box::new(InvalidOperationError));
-        }
-        //if no inputs, return 0
-        if ins.is_empty() {
-            return Ok(HashMap::from([(0, false)])); // If no inputs, return false
-        }
-        //if input is provided, set the signal to the input's value
-        if let Some(signal) = ins.get(&self.source_id) {
-            self.signal = *signal;
-            // Return the signal as a single output with destination ID
-            if let Some(dest_id) = self.dest {
-                return Ok(HashMap::from([(dest_id, self.signal)]));
-            } else {
-                return Ok(HashMap::new()); // If no destination, return the signal
-            }
-        } else {
-            Err("Input signal not found".into())
-        }
+    fn tick(&mut self, _: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
+        Err("Wires cannot be ticked directly, they are passive holders of a signal".into())
     }
 
     fn get_kind(&self) -> LogicalKind {
@@ -117,6 +98,9 @@ impl Logical for Wire {
 
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.line.p1)
+    }
+    fn get_id(&self) -> usize {
+        self.id
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn Error>> {

@@ -42,6 +42,11 @@ impl Logical for Gate {
             _ => Err("Tick not implemented for this type".into()),
         }
     }
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
+
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.position.to_pos2())
     }
@@ -192,6 +197,9 @@ impl Gate {
             GateKind::Primitive(PrimitiveKind::PULSE) => {
                 self.state = !self.state;
             }
+            GateKind::Primitive(PrimitiveKind::TOGGLE) => {
+                self.state = !self.state;
+            }
             _ => println!("This gate type does not support click actions"),
         }
     }
@@ -233,6 +241,9 @@ impl Gate {
             }
             GateKind::Primitive(PrimitiveKind::PULSE) => {
                 Gate::from_template(&PrimitiveTemplate::from_values("PULSE", 0, 1), pos)
+            }
+            GateKind::Primitive(PrimitiveKind::TOGGLE) => {
+                Gate::from_template(&PrimitiveTemplate::from_values("TOGGLE", 0, 1), pos)
             }
             GateKind::Primitive(PrimitiveKind::LIGHT) => {
                 Gate::from_template(&PrimitiveTemplate::from_values("LIGHT", 1, 0), pos)
@@ -293,6 +304,9 @@ impl Gate {
             }
             "PULSE" => {
                 kind = GateKind::Primitive(PrimitiveKind::PULSE);
+            }
+            "TOGGLE" => {
+                kind = GateKind::Primitive(PrimitiveKind::TOGGLE);
             }
             "LIGHT" => {
                 kind = GateKind::Primitive(PrimitiveKind::LIGHT);

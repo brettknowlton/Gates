@@ -13,7 +13,7 @@ pub struct Input {
     pub parent_id: Option<usize>, // Optional parent gate, if this output belongs to a gate
     pub signal: bool,
 
-    pub in_wire_id: Option<usize>, //inputs can only have one wire connected
+    pub source_wire_id: Option<usize>, //inputs can only have one wire connected
     pub position: GridVec2,
 }
 
@@ -27,7 +27,7 @@ impl Input {
             parent_id: Some(parent_id), // Optional parent gate, if this input belongs to a gate
             signal: false,
 
-            in_wire_id: None,
+            source_wire_id: None, //source wire id is optional, as inputs can be wall-mounted
             position: GridVec2::default(), // Initialize with a default position
         }
     }
@@ -85,19 +85,18 @@ impl Input {
 impl Logical for Input {
     fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         //in an input's wire is not connected it's signal will always be false
-        if ins.len() > 1 {
-            return Err(Box::new(InvalidOperationError));
+        if ins.len() != 1 {
+            return Err("Inputs must have exactly one wire connected".into());
         }
-        if ins.is_empty() {
-            return Ok(HashMap::from([(0, false)])); // If no inputs, return false
-        }
+
+        let (_, signal) = ins.iter().next().unwrap();
         //if input is provided, set the signal to the input's value
-        if let Some(signal) = ins.get(&self.id) {
-            self.signal = *signal;
-        } else {
-            return Err("Input signal not found".into());
-        }
-        Ok(HashMap::from([(0, self.signal)])) // Assuming single output at index 0
+        self.signal = *signal;
+        Ok(HashMap::new())
+    }
+
+    fn get_id(&self) -> usize {
+        self.id
     }
 
     fn get_kind(&self) -> LogicalKind {

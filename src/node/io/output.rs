@@ -90,30 +90,31 @@ impl Output {
 impl Logical for Output {
     fn tick(&mut self, ins: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
         //output is updated by the gate it belongs to so just return a single output with the current signal state
-        if ins.len() > 1 {
-            return Err(Box::new(InvalidOperationError));
+        if ins.len() != 1 {
+            return Err("Output can only have one in signal".into());
         }
-        if ins.is_empty() {
-            self.signal = false; // If no inputs, signal is false
-            return Ok(HashMap::from([(self.id, false)])); // If no inputs, return false
-        }
-        self.signal = ins.get(&self.id).cloned().unwrap_or(false);
+        //check the signal in self.outs
+        self.signal = ins.values().next().cloned().unwrap_or(false);
 
         if self.out_wire_ids.is_empty() {
-            return Ok(HashMap::new()); // If no wires, return the signal
-        }
-        let mut out_signals = HashMap::new();
-        //for every wire connected to this output, return the signal
-        for wire_id in &self.out_wire_ids {
-            if let Some(wire_signal) = ins.get(wire_id) {
-                out_signals.insert(*wire_id, *wire_signal);
-            } else {
-                return Err("Output signal not found".into());
-            }
+            println!("Output with ID {} has no wires connected, returning empty signal map", self.id);
+            return Ok(HashMap::new()); // If no wires, return nothing
         }
 
-        Ok(out_signals)
+        let mut out_wire_signals = HashMap::new();
+        //for every wire connected to this output, return the signal
+        out_wire_signals.extend(self.out_wire_ids.iter().filter_map(|wire_id| {
+            Some((*wire_id, self.signal)) // Assuming each wire connected to this output carries the same signal
+        }));
+
+        Ok(out_wire_signals)
     }
+
+
+    fn get_id(&self) -> usize {
+        self.id
+    }
+
 
     fn get_kind(&self) -> LogicalKind {
         LogicalKind::IO(IOKind::Output)
@@ -134,10 +135,10 @@ impl Logical for Output {
         &self,
         ui: &mut Ui,
         sender: Sender<UiEvent>,
-        live_data: &HashMap<usize, Box<dyn Logical>>,
+        _live_data: &HashMap<usize, Box<dyn Logical>>,
     ) -> Response {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            let button_color: Color32; // Default color
+            let button_color: Color32;
             if self.signal {
                 button_color = HI_COLOR;
             } else {
@@ -151,9 +152,11 @@ impl Logical for Output {
             let mouse_pos = ui.ctx().input(|i| i.pointer.hover_pos());
 
             if ui.add(btn).clicked() {
-                sender.try_send(UiEvent::ClickedIO(self.id, mouse_pos.unwrap())).unwrap_or_else(|_| {
-                    println!("Failed to send ClickedIO event");
-                });
+                sender
+                    .try_send(UiEvent::ClickedIO(self.id, mouse_pos.unwrap()))
+                    .unwrap_or_else(|_| {
+                        println!("Failed to send ClickedIO event");
+                    });
             }
         })
         .response

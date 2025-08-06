@@ -22,6 +22,9 @@ impl PrimitiveTemplate {
             "PULSE" => {
                 kind = PrimitiveKind::PULSE;
             }
+            "TOGGLE" => {
+                kind = PrimitiveKind::TOGGLE;
+            }
             "LIGHT" => {
                 kind = PrimitiveKind::LIGHT;
             }
@@ -97,6 +100,7 @@ impl PrimitiveKind {
         match self {
             PrimitiveKind::HISIGNAL => {
                 //HI-SIGNAL always outputs true
+                println!("Ticking HISIGNAL, setting output to true");
                 let (id, _) = gate.outs.iter().next().unwrap();
                 gate.state = true; // Set gate state to true
                 Ok(HashMap::from([(*id, true)]))
@@ -124,7 +128,6 @@ impl PrimitiveKind {
                 Ok(HashMap::new())
             }
             PrimitiveKind::PULSE => {
-
                 let (out_id, _) = gate.outs.iter().next().expect("PULSE was ticked but did not have an output"); //get the  id of the (only) output
                 if gate.state {
                     //set state to false and send a true signal

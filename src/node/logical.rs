@@ -17,6 +17,11 @@ pub trait Logical: AsAny {
         println!("get_position not implemented for this type");
         Err(Box::new(InvalidOperationError))
     }
+
+    fn get_id(&self) -> usize {
+        usize::MAX // Default ID, should be overridden by specific logical types
+    }
+
     fn set_position(&mut self, pos: Pos2) -> Result<(), Box<dyn Error>>;
     fn get_kind(&self) -> LogicalKind;
     fn show(
@@ -30,8 +35,6 @@ pub trait Logical: AsAny {
         println!("Click on not implemented for this type");
     }
 }
-
-
 
 // Define a trait to allow downcasting
 pub trait AsAny {
@@ -49,7 +52,6 @@ impl<T: Logical + 'static> AsAny for T {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum LogicalKind {
     Gate(GateKind),
@@ -63,6 +65,7 @@ impl LogicalKind {
     pub fn is_primitive(&self) -> bool {
         matches!(self, LogicalKind::Gate(GateKind::Primitive(_)))
     }
+    
     pub fn is_primitive_kind(&self, kind: PrimitiveKind) -> bool {
         if let LogicalKind::Gate(GateKind::Primitive(primitive_kind)) = self {
             *primitive_kind == kind
@@ -87,7 +90,6 @@ impl LogicalKind {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct InvalidOperationError;
 impl Error for InvalidOperationError {}
@@ -96,5 +98,3 @@ impl Display for InvalidOperationError {
         write!(f, "Cannot set position for this type")
     }
 }
-
-

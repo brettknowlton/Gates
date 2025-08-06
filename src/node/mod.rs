@@ -31,4 +31,3 @@ const LINE_DEFAULT_COLOR: Color32 = Color32::from_rgb(0, 0, 0);
 //dark red for lo, dark green for hi
 const HI_COLOR: Color32 = Color32::from_rgb(0, 127, 0);
 const LO_COLOR: Color32 = Color32::from_rgb(127, 0, 0);
-
