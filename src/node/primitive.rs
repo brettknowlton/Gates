@@ -46,6 +46,9 @@ impl PrimitiveTemplate {
             "NAND" => {
                 kind = PrimitiveKind::NAND;
             }
+            "NOR" => {
+                kind = PrimitiveKind::NOR;
+            }
             _ => {
                 kind = PrimitiveKind::None;
             }
@@ -89,6 +92,7 @@ pub enum PrimitiveKind {
     AND,
     XOR,
     NAND,
+    NOR,
 }
 
 impl PrimitiveKind {
@@ -186,6 +190,13 @@ impl PrimitiveKind {
                 gate.state = result; // Set gate state based on input
                 Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
             }
+            PrimitiveKind::NOR => {
+                // NOR logic, returns true if all inputs are false
+                let (out_id, _) = gate.outs.iter().next().expect("NOR was ticked but did not have an output"); //get the  id of the (only) output
+                let result = !ins.values().any(|&v| v);
+                gate.state = result; // Set gate state based on input
+                Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
+            }
             _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
         }
     }
@@ -201,7 +212,7 @@ impl PrimitiveKind {
             PrimitiveKind::HISIGNAL | PrimitiveKind::LOSIGNAL | PrimitiveKind::PULSE | PrimitiveKind::TOGGLE => 0,
             PrimitiveKind::LIGHT => 1,
             PrimitiveKind::BUFFER | PrimitiveKind::NOT => 1,
-            PrimitiveKind::OR | PrimitiveKind::AND | PrimitiveKind::XOR | PrimitiveKind::NAND => 2,
+            PrimitiveKind::OR | PrimitiveKind::AND | PrimitiveKind::XOR | PrimitiveKind::NAND | PrimitiveKind::NOR => 2,
             PrimitiveKind::None => 0, // Default case
         }
     }
@@ -222,6 +233,7 @@ impl Display for PrimitiveKind {
             PrimitiveKind::AND => write!(f, "AND"),
             PrimitiveKind::XOR => write!(f, "XOR"),
             PrimitiveKind::NAND => write!(f, "NAND"),
+            PrimitiveKind::NOR => write!(f, "NOR"),
         }
     }
 }

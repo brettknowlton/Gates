@@ -17,7 +17,7 @@ pub use theme::SkeletonTheme;
 
 use eframe::{
     self,
-    egui::{Align, Context, Pos2, Ui, UiBuilder},
+    egui::{Align, Context, Label, Pos2, Ui, UiBuilder},
     *,
 };
 
@@ -51,6 +51,8 @@ pub struct MyApp {
 
     #[serde(skip)]
     live_data: HashMap<usize, Box<dyn Logical>>, // (GateType, position, id)
+    #[serde(skip)]
+    trying_save: bool,
 
     pan_center: Pos2,
     pan_area_rect: Option<egui::Rect>,
@@ -90,6 +92,7 @@ impl Default for MyApp {
 
             current_chip: None,
             live_data: HashMap::<usize, Box<dyn Logical>>::new(),
+            trying_save: false,
 
             pan_center: Pos2::new(0.0, 0.0),
             pan_area_rect: None,
@@ -182,7 +185,7 @@ impl MyApp {
                 }
             })
             .collect();
-        println!("Found {} gates", gates.len());
+        // println!("Found {} gates", gates.len());
 
         // Now iterate mutably through each IO item, update all connected wires using only the data collected above
         for (_id, wire) in self.live_data.iter_mut() {
@@ -376,6 +379,7 @@ impl MyApp {
                                 .source_wire_id;
 
                             if in_wire_id.is_none() {
+                                //if this input has no wire connected
                                 if let Some(wire_id) = self.holding_wire.take() {
                                     //connect the wire to the input
                                     println!("Connecting wire to input: {:?}", kind);
@@ -401,6 +405,7 @@ impl MyApp {
                                         .unwrap()
                                         .source_wire_id = Some(wire_id);
                                 } else {
+                                    //this input has a wire do nothing, as inputs may only
                                     println!(
                                         "Input: {:?} already has a wire connected, cannot connect another wire",
                                         id
@@ -409,9 +414,9 @@ impl MyApp {
                             }
                         }
                         LogicalKind::IO(IOKind::Output) => {
-                            println!("Left-Clicked on Output: {:?}", id);
+                            // println!("Left-Clicked on Output: {:?}", id);
                             if self.holding_wire.is_none() {
-                                println!("Creating wire from clicked IO: {:?}", id);
+                                // println!("Creating wire from clicked IO: {:?}", id);
                                 let new_wire = Wire::from_io(id, pos);
 
                                 self.live_data
@@ -426,7 +431,7 @@ impl MyApp {
                                 self.holding_wire = Some(new_wire.id);
                                 self.live_data.insert(new_wire.id, new_wire);
                             } else {
-                                let wire_id = self.holding_wire.unwrap();
+                                let wire_id = self.holding_wire.take().unwrap();
                                 //reconnect the wire using this output as the new source
                                 let old_output = self
                                     .live_data
@@ -460,15 +465,6 @@ impl MyApp {
                 UiEvent::ClickedIO(id, _pos, false) => {
                     //secondary click on an IO item
                     // If an IO was clicked with a secondary click, if a wire is connected, put wire in hand
-
-                    // let in_wire_id: Option<usize> = self
-                    //     .live_data
-                    //     .get(&id)
-                    //     .unwrap()
-                    //     .as_any()
-                    //     .downcast_ref::<Input>()
-                    //     .unwrap()
-                    //     .source_wire_id;
 
                     if let Some(item) = self.live_data.get_mut(&id) {
                         if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
@@ -547,6 +543,7 @@ impl eframe::App for MyApp {
             self.set_theme(ctx, &theme);
             self.theme_set = true;
         }
+
         // determine outputs for all logicals based on their inputs and their TERM
         self.apply_ui_events();
         self.update_logicals(ctx);
@@ -697,11 +694,12 @@ impl eframe::App for MyApp {
                         ui.vertical(|ui| {
                             if ui.button("Save Board").clicked() {
                                 // Clear the live data
+                                self.trying_save = true;
                                 self.live_data.clear();
                                 self.pan_center = Pos2::new(0.0, 0.0);
                                 self.dragging_gate = None;
                                 self.holding_wire = None;
-                                println!("Cleared the board");
+                                println!("Saving Board...");
                             }
                         });
                     })
@@ -728,7 +726,6 @@ impl eframe::App for MyApp {
                         });
                     })
                 });
-
             });
         });
 
@@ -753,7 +750,7 @@ impl eframe::App for MyApp {
                     //         }
                     //     }
                     // }
-                    
+
                     // draw logic here using `pan_center`
                     // Collect the keys first to avoid borrowing issues
                     let live_data_keys: Vec<usize> = self.live_data.keys().cloned().collect();
@@ -857,9 +854,21 @@ impl eframe::App for MyApp {
                     }
                 },
             ));
-
             //refresh all wire positions
             self.update_wire_positions(ui, self.pan_center);
+            if self.trying_save {
+                //create rect taking up entire central panel
+                let central_rect = ui.available_rect_before_wrap();
+                ui.scope_builder(UiBuilder::new().max_rect(central_rect).layout(Layout::centered_and_justified(Direction::LeftToRight)), |ui| {
+                    // Draw a semi-transparent background over the central panel
+                    Label::new("Saving...").ui(ui);
+                    ui.painter().rect_filled(
+                        central_rect,
+                        0.0,
+                        self.color_values.get("color-surface-500").cloned().unwrap_or(Color32::BLACK).gamma_multiply(0.5),
+                    );
+                });
+            }
         });
     }
 }

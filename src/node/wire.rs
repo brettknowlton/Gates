@@ -60,6 +60,12 @@ impl Wire {
         self.line.p2 = p2;
     }
 
+    pub fn delete(&mut self){
+        self.connected = false;
+        self.dest = None;
+        self.signal = false;
+    }
+
     pub fn set_signal(&mut self, signal: bool) {
         self.signal = signal;
     }
@@ -78,6 +84,7 @@ impl Wire {
             false,
         ))
     }
+
     pub fn on(mut self) {
         self.signal = true;
     }

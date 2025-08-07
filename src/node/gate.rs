@@ -105,8 +105,8 @@ impl Logical for Gate {
             GateKind::Primitive(PrimitiveKind::LIGHT) => {
                 if self.state {
                     accent_color = ui.style().visuals.selection.bg_fill;
+                    fill_color = ui.style().visuals.widgets.inactive.weak_bg_fill;
                 }
-                fill_color = ui.style().visuals.widgets.inactive.weak_bg_fill;
             }
             _ => {}
         }
@@ -251,14 +251,6 @@ impl Gate {
         g
     }
 
-    pub fn next_id() -> usize {
-        static mut ID: usize = 0;
-        unsafe {
-            ID += 1;
-            ID
-        }
-    }
-
     pub fn create_gate_from_template(t: GateKind, pos: Pos2) -> Gate {
         print!("Creating gate from template ID: {:?}", t);
         let new_gate = match t {
@@ -295,6 +287,9 @@ impl Gate {
             GateKind::Primitive(PrimitiveKind::NAND) => {
                 Gate::from_template(&PrimitiveTemplate::from_values("NAND", 2, 1), pos)
             }
+            GateKind::Primitive(PrimitiveKind::NOR) => {
+                Gate::from_template(&PrimitiveTemplate::from_values("NOR", 2, 1), pos)
+            }
             _ => Gate::from_template(&PrimitiveTemplate::from_values("E: Not Found", 1, 1), pos),
         };
 
@@ -329,7 +324,7 @@ impl Gate {
 
     pub fn generate(label: String, n_ins: usize, n_outs: usize) -> Gate {
         let kind: GateKind;
-        let id = Gate::next_id();
+        let id = MyApp::next_id();
         match label.as_str() {
             "HI-SIGNAL" => {
                 kind = GateKind::Primitive(PrimitiveKind::HISIGNAL);
@@ -363,6 +358,9 @@ impl Gate {
             }
             "NAND" => {
                 kind = GateKind::Primitive(PrimitiveKind::NAND);
+            }
+            "NOR" => {
+                kind = GateKind::Primitive(PrimitiveKind::NOR);
             }
             "Custom" => {
                 kind = GateKind::Custom;
