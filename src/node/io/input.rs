@@ -65,19 +65,13 @@ impl Input {
                             println!("Before: {:?}", item.get_kind());
                         }
                     }
-                    Err(Box::new(InvalidOperationError))
+                    Err(Box::new(InvalidOperationError("Parent could not be downcast to a Gate".to_string())))
                 }
             } else {
-                println!(
-                    "Parent gate does not exist on this input, Operation is not allowed, implement wall mounted inputs"
-                );
-                Err(Box::new(InvalidOperationError))
+                Err(Box::new(InvalidOperationError("Parent gate does not exist on this input, Operation is not allowed, implement wall mounted inputs".into())))
             }
         } else {
-            println!(
-                "Parent gate does not exist on this output, Operation is not allowed, implement wall mounted outputs"
-            );
-            Err(Box::new(InvalidOperationError))
+            Err(Box::new(InvalidOperationError("Parent gate does not exist on this output, Operation is not allowed, implement wall mounted outputs".into())))
         }
     }
 }
@@ -108,18 +102,16 @@ impl Logical for Input {
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn Error>> {
-        println!(
-            "Setting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead"
-        );
         // Inputs do not have a position, so we return an error
-        Err(Box::new(InvalidOperationError))
+        Err(Box::new(InvalidOperationError(
+            "Setting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead".to_string(),
+        )))
     }
 
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
-        println!(
-            "Getting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead"
-        );
-        Err(Box::new(InvalidOperationError))
+        Err(Box::new(InvalidOperationError(
+            "Getting position for Input directly is not allowed, use enum Logicals to match and set parent gate position instead".to_string(),
+        )))
     }
 
     fn show(

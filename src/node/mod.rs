@@ -13,6 +13,9 @@ pub use primitive::{PrimitiveTemplate, PrimitiveKind};
 mod io;
 pub use io::{IOKind, Input, Io, Output};
 
+mod chip;
+pub use chip::{ChipDefenition};
+
 pub use super::app::UiEvent;
 pub use eframe::egui::{
     Button, Color32, Direction, Layout, Pos2, Response, Sense, Ui, Widget, vec2,

@@ -197,7 +197,7 @@ impl PrimitiveKind {
                 gate.state = result; // Set gate state based on input
                 Ok(HashMap::from([(*out_id, result)])) // Assuming single output at index 0
             }
-            _ => Err(Box::new(InvalidOperationError)), // Other types not implemented yet
+            _ => Err(Box::new(InvalidOperationError("Could not determine primitive type".to_string()))), // Other types not implemented yet
         }
     }
 

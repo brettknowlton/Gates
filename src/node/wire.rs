@@ -2,7 +2,7 @@ use super::*;
 
 use crate::{MyApp, UiEvent};
 use crossbeam::channel::Sender;
-use eframe::{egui::{Rect, Stroke}};
+use eframe::egui::{Rect, Stroke};
 
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 pub struct WireLine {
@@ -12,11 +12,7 @@ pub struct WireLine {
 }
 impl WireLine {
     pub fn new(p1: Pos2, p2: Pos2, smoothing: bool) -> Self {
-        WireLine {
-            p1,
-            p2,
-            smoothing,
-        }
+        WireLine { p1, p2, smoothing }
     }
 }
 
@@ -34,7 +30,8 @@ impl Hash for WireLine {
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Wire {
     pub id: usize,
-    pub signal: bool,
+    signal: bool,
+
     pub source_id: usize,
     pub dest: Option<usize>,
 
@@ -51,7 +48,7 @@ impl Wire {
             dest: None,
 
             connected: false,
-            line: WireLine::new(position, position, smoothing), //line begins at one point
+            line: WireLine::new(position, position, smoothing), //line begins at one point so both p1 and p2 are the same
         }
     }
 
@@ -60,7 +57,7 @@ impl Wire {
         self.line.p2 = p2;
     }
 
-    pub fn delete(&mut self){
+    pub fn delete(&mut self) {
         self.connected = false;
         self.dest = None;
         self.signal = false;
@@ -78,11 +75,7 @@ impl Wire {
     }
 
     pub fn from_io(output_id: usize, position: Pos2) -> Box<Self> {
-        Box::new(Wire::new(
-            output_id,
-            position,
-            false,
-        ))
+        Box::new(Wire::new(output_id, position, false))
     }
 
     pub fn on(mut self) {
@@ -95,8 +88,25 @@ impl Wire {
 }
 
 impl Logical for Wire {
-    fn tick(&mut self, _: HashMap<usize, bool>) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
-        Err("Wires cannot be ticked directly, they are passive holders of a signal".into())
+    ///Wire should take in only one input, and will output only one output IF it is connected to a destination
+    ///If it is not connected, it will return nothing
+    fn tick(
+        &mut self,
+        inputs: HashMap<usize, bool>,
+    ) -> Result<HashMap<usize, bool>, Box<dyn Error>> {
+
+        assert!(inputs.len() == 1, "Wires should only have one input");
+        self.signal = *inputs.values().next().unwrap();
+
+
+        self.connected = self.dest.is_some();
+        if self.connected {
+            let mut outputs = HashMap::new();
+            outputs.insert(self.dest.unwrap(), self.signal);
+            Ok(outputs)
+        } else {
+            Ok(HashMap::new())
+        }
     }
 
     fn get_kind(&self) -> LogicalKind {
@@ -106,12 +116,17 @@ impl Logical for Wire {
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
         Ok(self.line.p1)
     }
+
     fn get_id(&self) -> usize {
         self.id
     }
 
+    ///WILL PANIC FOR WIRES\
+    /// wire positions can not be set to a single point\
+    /// use Wire::set_positions(p1, p2) instead
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn Error>> {
-        Err(Box::new(InvalidOperationError))
+        eprintln!("Cannot set position for a wire");
+        Err(Box::new(InvalidOperationError("Cannot set position for a wire this way \n use \"Wire::set_positions(p1,p2) instead\"".to_string())))
     }
 
     fn show(
@@ -127,9 +142,15 @@ impl Logical for Wire {
         );
 
         let color = if self.signal {
-            colors.get(HI_SIGNAL_COLOR).unwrap_or(&Color32::DARK_GREEN).clone()
+            colors
+                .get(HI_SIGNAL_COLOR)
+                .unwrap_or(&Color32::DARK_GREEN)
+                .clone()
         } else {
-            colors.get(LO_SIGNAL_COLOR).unwrap_or(&Color32::GRAY).clone()
+            colors
+                .get(LO_SIGNAL_COLOR)
+                .unwrap_or(&Color32::GRAY)
+                .clone()
         };
         //if wire is connected, update the line's end points to be the current source -> destination positions
         if self.connected {}

@@ -1,5 +1,3 @@
-
-
 use super::*;
 
 use std::collections::HashMap;
@@ -72,19 +70,16 @@ impl Output {
                             println!("Before: {:?}", item.get_kind());
                         }
                     }
-                    Err(Box::new(InvalidOperationError))
+                    Err(Box::new(InvalidOperationError(
+                        "Parent gate could not be downcast to Gate, Operation is not allowed"
+                            .to_string(),
+                    )))
                 }
             } else {
-                println!(
-                    "Parent gate does not exist on this input, Operation is not allowed, implement wall mounted inputs"
-                );
-                Err(Box::new(InvalidOperationError))
+                Err(Box::new(InvalidOperationError("Parent gate does not exist on this input, Operation is not allowed, implement wall mounted inputs".into())))
             }
         } else {
-            println!(
-                "Parent gate does not exist on this output, Operation is not allowed, implement wall mounted outputs"
-            );
-            Err(Box::new(InvalidOperationError))
+            Err(Box::new(InvalidOperationError("Parent gate does not exist on this output, Operation is not allowed, implement wall mounted outputs".into())))
         }
     }
 }
@@ -99,7 +94,10 @@ impl Logical for Output {
         self.signal = ins.values().next().cloned().unwrap_or(false);
 
         if self.out_wire_ids.is_empty() {
-            println!("Output with ID {} has no wires connected, returning empty signal map", self.id);
+            println!(
+                "Output with ID {} has no wires connected, returning empty signal map",
+                self.id
+            );
             return Ok(HashMap::new()); // If no wires, return nothing
         }
 
@@ -112,25 +110,25 @@ impl Logical for Output {
         Ok(out_wire_signals)
     }
 
-
     fn get_id(&self) -> usize {
         self.id
     }
-
 
     fn get_kind(&self) -> LogicalKind {
         LogicalKind::IO(IOKind::Output)
     }
 
     fn set_position(&mut self, _pos: Pos2) -> Result<(), Box<dyn std::error::Error>> {
-        print!("Setting position for Output is not allowed, set parent gate position instead");
         // Outputs do not have a position, so we return an error
-        Err(Box::new(InvalidOperationError))
+        Err(Box::new(InvalidOperationError(
+            "Setting position for Output is not allowed, set parent gate position instead".into(),
+        )))
     }
 
     fn get_position(&self) -> Result<Pos2, Box<(dyn Error + 'static)>> {
-        print!("Parent gate not found, use get_position with live data");
-        Err(Box::new(InvalidOperationError))
+        Err(Box::new(InvalidOperationError(
+            "Parent gate not found, use get_position with live data".into(),
+        )))
     }
 
     fn show(
@@ -143,7 +141,10 @@ impl Logical for Output {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
             let button_color: Color32;
             if self.signal {
-                button_color = colors.get(HI_SIGNAL_COLOR).unwrap_or(&Color32::GREEN).clone();
+                button_color = colors
+                    .get(HI_SIGNAL_COLOR)
+                    .unwrap_or(&Color32::GREEN)
+                    .clone();
             } else {
                 button_color = colors.get(LO_SIGNAL_COLOR).unwrap_or(&Color32::RED).clone();
             }
@@ -152,15 +153,18 @@ impl Logical for Output {
                 .fill(button_color)
                 .min_size(vec2(18.0, 18.0));
 
-            let mouse_pos = ui.ctx().input(|i| i.pointer.hover_pos()).unwrap_or_default();
-            let response= ui.add(btn);
+            let mouse_pos = ui
+                .ctx()
+                .input(|i| i.pointer.hover_pos())
+                .unwrap_or_default();
+            let response = ui.add(btn);
             if response.clicked_by(PointerButton::Primary) {
                 sender
                     .try_send(UiEvent::ClickedIO(self.id, mouse_pos, true))
                     .unwrap_or_else(|_| {
                         println!("Failed to send ClickedIO event");
                     });
-            }else if response.clicked_by(PointerButton::Secondary) {
+            } else if response.clicked_by(PointerButton::Secondary) {
                 // Handle secondary click (right-click)
                 sender
                     .try_send(UiEvent::ClickedIO(self.id, mouse_pos, false))

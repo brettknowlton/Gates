@@ -15,8 +15,7 @@ pub trait Logical: AsAny {
     }
     
     fn get_position(&self) -> Result<Pos2, Box<dyn Error>> {
-        println!("get_position not implemented for this type");
-        Err(Box::new(InvalidOperationError))
+        Err(Box::new(InvalidOperationError("get_position not implemented".to_string())))
     }
 
     fn get_id(&self) -> usize {
@@ -59,6 +58,7 @@ pub enum LogicalKind {
     Gate(GateKind),
     Wire,
     IO(IOKind),
+    Chip(String), // Chip kind with a name
 }
 impl LogicalKind {
     pub fn is_gate(&self) -> bool {
@@ -82,6 +82,13 @@ impl LogicalKind {
     pub fn is_io(&self) -> bool {
         matches!(self, LogicalKind::IO(_))
     }
+    pub fn is_input(&self) -> bool {
+        matches!(self, LogicalKind::IO(IOKind::Input))
+    }
+    pub fn is_output(&self) -> bool {
+        matches!(self, LogicalKind::IO(IOKind::Output))
+    }
+
 
     pub fn as_gate(&self) -> Result<GateKind, Box<dyn Error>> {
         if let LogicalKind::Gate(gate_kind) = self {
@@ -93,10 +100,16 @@ impl LogicalKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
-pub struct InvalidOperationError;
+pub struct InvalidOperationError(pub String);
+impl InvalidOperationError {
+    pub fn new(msg: &str) -> Self {
+        InvalidOperationError(msg.to_string())
+    }
+}
 impl Error for InvalidOperationError {}
 impl Display for InvalidOperationError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "Cannot set position for this type")
+        format!("{}", self.0)
+            .fmt(f)
     }
 }

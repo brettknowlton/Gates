@@ -305,10 +305,11 @@ impl MyApp {
     }
 
     fn apply_wire_signals_to_inputs(&mut self, wire_signals: &HashMap<usize, bool>) {
-        for (input_id, &signal) in wire_signals {
-            if let Some(input) = self.get_input_mut(*input_id) {
-                input.signal = signal;
-                println!("Updated input: {:?} with signal: {}", input_id, signal);
+        //every input must be updated, even if signals are not present in wire_signals
+        for (input_id, input) in self.live_data.iter_mut() {
+            if let Some(input) = input.as_any_mut().downcast_mut::<Input>() {
+                // Set the input signal based on wire signals or default to false
+                input.signal = wire_signals.get(&input_id).cloned().unwrap_or(false);
             }
         }
     }
@@ -549,7 +550,7 @@ impl eframe::App for MyApp {
         self.update_logicals(ctx);
 
         egui::SidePanel::left("Tools").show(ctx, |ui| {
-            ui.set_min_width(SIDE_PANEL_WIDTH);
+            ui.set_max_width(SIDE_PANEL_WIDTH);
             ui.vertical_centered_justified(|ui| {
                 //display title "Saved Gates" 3/4 the width of the panel, bold, and centered
                 ui.heading("Saved Chips");
@@ -829,6 +830,19 @@ impl eframe::App for MyApp {
                                 LogicalKind::IO(_) => {
                                     ui.scope_builder(UiBuilder::new(), |_ui| {}).response //does nothing
                                 }
+                                LogicalKind::Chip(_) => {
+                                    // Show the chip
+                                    ui.scope_builder(UiBuilder::new(), |ui| {
+                                        pan_item.show(
+                                            ui,
+                                            self.event_sender.clone(),
+                                            &self.live_data,
+                                            &self.color_values,
+                                        );
+                                    })
+                                    .response
+                                }
+
                             };
                         }
                     }
@@ -856,6 +870,8 @@ impl eframe::App for MyApp {
             ));
             //refresh all wire positions
             self.update_wire_positions(ui, self.pan_center);
+
+            // If we are trying to save, show a saving message
             if self.trying_save {
                 //create rect taking up entire central panel
                 let central_rect = ui.available_rect_before_wrap();
