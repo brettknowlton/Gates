@@ -17,7 +17,7 @@ pub use theme::SkeletonTheme;
 
 use eframe::{
     self,
-    egui::{Align, Context, Label, Pos2, Ui, UiBuilder},
+    egui::{Align, Align2, Context, IntoAtoms, Label, Popup, PopupCloseBehavior, Pos2, RectAlign, Ui, UiBuilder},
     *,
 };
 
@@ -50,7 +50,7 @@ pub struct MyApp {
     current_chip: Option<PathBuf>,
 
     #[serde(skip)]
-    live_data: HashMap<usize, Box<dyn Logical>>, // (GateType, position, id)
+    live_data: HashMap<usize, Box<dyn Logical>>, // (id, position, id)
     #[serde(skip)]
     trying_save: bool,
 
@@ -693,15 +693,71 @@ impl eframe::App for MyApp {
                 ui.scope_builder(UiBuilder::new().max_rect(left_half_rect), |ui| {
                     ui.with_layout(Layout::top_down(Align::Min), |ui| {
                         ui.vertical(|ui| {
-                            if ui.button("Save Board").clicked() {
-                                // Clear the live data
+                            let align = RectAlign {
+                                parent: Align2::LEFT_BOTTOM,
+                                child: Align2::LEFT_TOP,
+                            };
+                            let gap = 4.0;
+                            let close_behavior = PopupCloseBehavior::CloseOnClickOutside;
+
+                            let response = ui.button("Save Board");
+                            if response.clicked(){
                                 self.trying_save = true;
-                                self.live_data.clear();
-                                self.pan_center = Pos2::new(0.0, 0.0);
                                 self.dragging_gate = None;
                                 self.holding_wire = None;
-                                println!("Saving Board...");
                             }
+
+                            
+                            Popup::menu(&response).open(self.trying_save)
+                                .gap(gap)
+                                .align(align)
+                                .close_behavior(close_behavior)
+                                .show(|ui| { 
+                                    ui.label("Are you sure?\n This will save a chip and clear the current board.");
+                                    if ui.button("Yes").clicked() {
+                                        self.trying_save = false;
+                                        // Clear the live data
+                                        self.live_data.clear();
+                                        self.pan_center = Pos2::new(0.0, 0.0);
+                                        self.dragging_gate = None;
+                                        self.holding_wire = None;
+
+                                        let mut copy_data = HashMap::new();
+                                        for (id, item) in self.live_data.iter_mut() {
+
+                                            if let gate= item.as_any()
+                                            .downcast_ref::<Gate>(){
+                                                copy_data.insert(*id, gate.clone());
+                                            }
+                                            else if let wire = item.as_any()
+                                            .downcast_ref::<Wire>(){
+                                                copy_data.insert(*id, wire.clone());
+                                            }
+                                            else if let input = item.as_any()
+                                            .downcast_ref::<Input>(){
+                                                copy_data.insert(*id, input.clone());
+                                            }
+                                            else if let output = item.as_any()
+                                            .downcast_ref::<Output>(){
+                                                copy_data.insert(*id, output.clone());
+                                            }
+                                        }
+
+                                        let new_chip = ChipDefenition::create_chip_from_board(, "New_Chip".to_string());
+
+
+                                        println!("Cleared the board");
+                                    }
+                                    if ui.button("No").clicked() {
+                                        self.trying_save = false;
+                                        // Clear the live data
+                                        self.dragging_gate = None;
+                                        self.holding_wire = None;
+                                        println!("Save cancelled");
+                                    }
+
+                                })
+                        ;
                         });
                     })
                 });
@@ -842,7 +898,6 @@ impl eframe::App for MyApp {
                                     })
                                     .response
                                 }
-
                             };
                         }
                     }
@@ -871,20 +926,6 @@ impl eframe::App for MyApp {
             //refresh all wire positions
             self.update_wire_positions(ui, self.pan_center);
 
-            // If we are trying to save, show a saving message
-            if self.trying_save {
-                //create rect taking up entire central panel
-                let central_rect = ui.available_rect_before_wrap();
-                ui.scope_builder(UiBuilder::new().max_rect(central_rect).layout(Layout::centered_and_justified(Direction::LeftToRight)), |ui| {
-                    // Draw a semi-transparent background over the central panel
-                    Label::new("Saving...").ui(ui);
-                    ui.painter().rect_filled(
-                        central_rect,
-                        0.0,
-                        self.color_values.get("color-surface-500").cloned().unwrap_or(Color32::BLACK).gamma_multiply(0.5),
-                    );
-                });
-            }
         });
     }
 }

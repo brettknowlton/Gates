@@ -23,7 +23,7 @@ pub struct ChipDefenition {
 }
 
 impl ChipDefenition{
-    fn save_chip_from_board(board_data: HashMap<usize, Box<dyn Logical>>, name: String) -> Self {
+    fn create_chip_from_board(board_data: HashMap<usize, Box<dyn Logical>>, name: String) -> Self {
 
 
         let mut c= ChipDefenition {

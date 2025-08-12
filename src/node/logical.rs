@@ -34,7 +34,8 @@ pub trait Logical: AsAny {
     fn click_on(&mut self) {
         // Default implementation, can be overridden by specific logical types
         println!("Click on not implemented for this type");
-    }
+    }    
+
 }
 
 // Define a trait to allow downcasting
@@ -75,6 +76,7 @@ impl LogicalKind {
             false
         }
     }
+
 
     pub fn is_wire(&self) -> bool {
         matches!(self, LogicalKind::Wire)
