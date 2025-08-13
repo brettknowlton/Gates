@@ -102,7 +102,7 @@ impl MyApp {
 
         new.event_sender = event_sender;
         new.event_receiver = event_receiver;
-        new.data.load_data();
+        new.data.load_app_data();
         new
     }
 
@@ -381,7 +381,7 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        let (name, theme) = self.data.available_themes.iter().next().unwrap().clone();
+        let theme = self.data.available_themes.get("fennec.css").unwrap().clone();
         if !self.theme_set {
             self.set_theme(ctx, &theme);
             self.theme_set = true;
@@ -401,7 +401,7 @@ impl eframe::App for MyApp {
                 if ui.button("New Chip").clicked() {
                     let new_chip = ChipDefenition::create_blank_chip("New Chip".to_string());
                     self.data.saved_chips.push(new_chip);
-                    data::Data::save_chip(&self.data.live_data);
+                    data::Data::save_to_chip_file(&self.data.live_data);
                 };
 
                 //two "columns" first 80% th width for chip name, second 20% width for trash icon
@@ -420,7 +420,7 @@ impl eframe::App for MyApp {
                         if ui.button("Delete").clicked() {
                             // Remove the gate from the saved gates
                             queue_rem = Some(idx);
-                            data::Data::save_chip(&self.data.live_data);
+                            data::Data::save_to_chip_file(&self.data.live_data);
                         }
                         idx += 1;
                     });
@@ -446,14 +446,14 @@ impl eframe::App for MyApp {
                 });
 
                 let mut next_themes = Vec::new();
-                let themes = self.available_themes.clone();
+                let themes = self.data.available_themes.clone();
 
                 ui.menu_button("Themes", |ui| {
                     next_themes = themes
                         .iter()
-                        .filter_map(|x| {
+                        .filter_map(|(name, x)| {
                             ui.add_space(16.0);
-                            if ui.button(&x.name).clicked() {
+                            if ui.button(name).clicked() {
                                 Some(x)
                             } else {
                                 None
@@ -477,7 +477,7 @@ impl eframe::App for MyApp {
             // println!("Primitive gates: {:?}", self.primitive_gates);
             ui.horizontal_centered(|ui| {
                 dnd(ui, "Primitive").show(
-                    &mut self.prim_templates.iter(),
+                    &mut self.data.prim_templates.iter(),
                     |ui, item, handle, _state| {
                         handle.ui(ui, |ui| {
                             let w = ui.add(item.make_toolbox_widget());
@@ -666,7 +666,7 @@ impl eframe::App for MyApp {
                                             ui,
                                             self.event_sender.clone(),
                                             &self.data.live_data,
-                                            &self.color_values,
+                                            &self.data.color_values,
                                         );
                                         if response.drag_started()
                                             && ui.input(|i| !i.key_down(egui::Key::Space))
@@ -704,7 +704,7 @@ impl eframe::App for MyApp {
                                             ui,
                                             self.event_sender.clone(),
                                             &self.data.live_data,
-                                            &self.color_values,
+                                            &self.data.color_values,
                                         );
                                     })
                                     .response
@@ -719,7 +719,7 @@ impl eframe::App for MyApp {
                                             ui,
                                             self.event_sender.clone(),
                                             &self.data.live_data,
-                                            &self.color_values,
+                                            &self.data.color_values,
                                         );
                                     })
                                     .response

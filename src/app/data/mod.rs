@@ -25,7 +25,7 @@ impl Data{
         }
     }
 
-    pub fn load_data(&mut self) -> &mut Self {
+    pub fn load_app_data(&mut self) -> &mut Self {
         self.load_themes();
 
         self.prim_templates = data::Data::load_prims();
@@ -58,8 +58,8 @@ impl Data{
         }
     }
 
-
     ///loads live_data from a file (currently only returns a vector of gates)
+    /// long term is not really needed but could be useful for debugging /restoring states of more complex things
     pub fn load_gate_data(path: &str) -> Vec<Gate> {
         //for every line in the file, create a gate
         let data = std::fs::read_to_string(path).unwrap();
@@ -156,10 +156,10 @@ impl Data{
         gates
     }
 
-    pub fn save_chip(data: &HashMap<usize, Box<dyn Logical>>) {
+    pub fn save_to_chip_file(self) {
         // Save each gate to a file in the saves directory, overwriting existing files
         std::fs::create_dir_all("./saves").unwrap();
-        for (id, item) in data {
+        for (id, item) in self.live_data {
             //match on the item type and serialize all gates and wires
             //gate
             if let Some(gate) = item.as_any().downcast_ref::<Gate>() {
@@ -177,6 +177,11 @@ impl Data{
     }
 
 
+
+
+    ///should be run every frame to update the logical states of all gates and wires
+    ///this will collect all inputs, process all gates, and update outputs and wires accordingly
+    ///it will also request a repaint of the UI context
     pub fn update_logicals(&mut self, ctx: &Context) {
         // Update the logical states of all gates and wires
 
@@ -195,6 +200,11 @@ impl Data{
         ctx.request_repaint();
     }
 
+
+
+
+    /// Collects the current states of all inputs in the live_data
+    /// Returns a HashMap where the key is the input ID and the value is the signal
     fn collect_input_states(&self) -> HashMap<usize, bool> {
         self.live_data
             .iter()
@@ -206,6 +216,13 @@ impl Data{
             .collect()
     }
 
+
+
+
+    /// Processes all gates in the live_data, gathering their inputs and producing outputs
+    /// Returns a HashMap where the key is the output ID and the value is the signal
+    /// This method assumes that each gate can be processed independently
+    /// and that the inputs for each gate are already available in the input_states HashMap.
     fn process_gates(&mut self, input_states: &HashMap<usize, bool>) -> HashMap<usize, bool> {
         let mut gate_outputs = HashMap::new();
 
@@ -232,6 +249,13 @@ impl Data{
         gate_outputs
     }
 
+
+
+
+    /// Updates the outputs and wires based on the gate outputs
+    /// Returns a HashMap where the key is the input ID and the value is the signal
+    /// This method updates the output signals and propagates them through the wires
+    /// connected to those outputs.
     fn update_outputs_and_wires(
         &mut self,
         gate_outputs: &HashMap<usize, bool>,
@@ -261,6 +285,14 @@ impl Data{
         input_signals
     }
 
+
+
+
+    /// Applies the wire signals to the inputs in live_data
+    /// This method ensures that every input is updated with the latest signal from the wire signals
+    /// If a wire signal is not present, the input signal defaults to false
+    /// This is necessary to ensure that all inputs are in a consistent state
+    /// even if they are not connected to any wire.
     fn apply_wire_signals_to_inputs(&mut self, wire_signals: &HashMap<usize, bool>) {
         //every input must be updated, even if signals are not present in wire_signals
         for (input_id, input) in self.live_data.iter_mut() {
@@ -270,6 +302,9 @@ impl Data{
             }
         }
     }
+
+
+
 
     // Helper methods for cleaner access
     fn get_output_mut(&mut self, id: usize) -> Option<&mut Output> {
