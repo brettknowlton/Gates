@@ -23,6 +23,7 @@ impl SkeletonTheme {
         let content = fs::read_to_string(path)?;
         Self::from_css_str(&content, &name)
     }
+    
 
     pub fn get_visuals(&self) -> &Visuals {
         &self.visuals

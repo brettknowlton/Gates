@@ -12,12 +12,9 @@ pub use data::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-mod theme;
-pub use theme::SkeletonTheme;
-
 use eframe::{
     self,
-    egui::{Align, Align2, Context, IntoAtoms, Label, Popup, PopupCloseBehavior, Pos2, RectAlign, Ui, UiBuilder},
+    egui::{Align, Align2, Context, Popup, PopupCloseBehavior, Pos2, RectAlign, Ui, UiBuilder},
     *,
 };
 
@@ -32,36 +29,26 @@ static mut NEXT_ID: usize = 0; // static variable to generate unique ids for gat
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct MyApp {
-    // Example stuff:
-    label: String,
-
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
+    #[serde(skip)]
+    data: Data,
 
     files_loaded: bool,
     theme_set: bool,
-    color_values: HashMap<String, Color32>,
-
-    prim_templates: Vec<PrimitiveTemplate>,
-    saved: Vec<PrimitiveTemplate>,
-    #[serde(skip)]
-    available_themes: Vec<SkeletonTheme>,
 
     current_chip: Option<PathBuf>,
-
-    #[serde(skip)]
-    live_data: HashMap<usize, Box<dyn Logical>>, // (id, position, id)
-    #[serde(skip)]
-    trying_save: bool,
 
     pan_center: Pos2,
     pan_area_rect: Option<egui::Rect>,
 
+
+    #[serde(skip)]
+    trying_save: bool,
+
     pub dragging_gate: Option<usize>,
     pub dragging_kind: Option<LogicalKind>, // kind of primitive we are dragging, if any
 
-    pub holding_wire: Option<usize>, //id of the wire we are currently holding
 
+    pub holding_wire: Option<usize>, //id of the wire we are currently holding
     #[serde(skip)]
     pub event_sender: Sender<UiEvent>,
     #[serde(skip)]
@@ -79,23 +66,17 @@ impl Default for MyApp {
     fn default() -> Self {
         let (event_sender, event_receiver) = crossbeam::channel::unbounded();
         Self {
+            data: Data::new(),
             // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
             files_loaded: false,
             theme_set: false,
-            color_values: HashMap::new(),
-
-            prim_templates: Vec::new(),
-            saved: Vec::new(),
-            available_themes: Vec::new(),
 
             current_chip: None,
-            live_data: HashMap::<usize, Box<dyn Logical>>::new(),
-            trying_save: false,
 
             pan_center: Pos2::new(0.0, 0.0),
             pan_area_rect: None,
+
+            trying_save: false,
 
             dragging_gate: None,
             dragging_kind: None, // No primitive kind being dragged initially
@@ -121,45 +102,18 @@ impl MyApp {
 
         new.event_sender = event_sender;
         new.event_receiver = event_receiver;
-        new.load_themes();
-        new.load_data()
+        new.data.load_data();
+        new
     }
 
-    pub fn load_themes(&mut self) {
-        //for item in ../../assets/*
-        let theme_dir = PathBuf::from("assets/");
-        if let Ok(entries) = std::fs::read_dir(theme_dir) {
-            for entry in entries.flatten() {
-                if let Some(path) = entry.path().to_str() {
-                    if path.ends_with(".css") {
-                        if let Ok(theme) = SkeletonTheme::from_css_file(path) {
-                            println!("Loaded theme: {}", path);
-                            self.available_themes.push(theme);
-                        } else {
-                            eprintln!("Failed to load theme from: {}", path);
-                        }
-                    }
-                }
-            }
-        } else {
-            eprintln!("Failed to read theme directory");
-        }
-    }
+    
+
     pub fn set_theme(&mut self, ctx: &Context, theme: &SkeletonTheme) {
         theme.apply(ctx);
-        self.color_values = theme.colors.clone();
+        self.data.color_values = theme.colors.clone();
     }
 
-    fn load_data(mut self) -> Self {
-        self.saved = data::Data::load_chips();
-        println!("Loaded chips: {}", self.saved.len());
-
-        self.prim_templates = data::Data::load_prims();
-        println!("Loaded prims: {}", self.prim_templates.len());
-
-        self.files_loaded = true;
-        self
-    }
+    
 
     pub fn next_id() -> usize {
         //generate new id incrementally from a static variable
@@ -170,16 +124,15 @@ impl MyApp {
 
     fn update_wire_positions(&mut self, ui: &mut Ui, pan_center: Pos2) {
         //loop live data and collect all inputs and outputs into one HashMap and Wires into another
-
         // iterate all gates' inputs and outputs and collect their (id, positions)
-        let gates: HashMap<usize, Pos2> = self
+        let io_positions: HashMap<usize, Pos2> = self.data
             .live_data
             .iter()
             .filter_map(|(id, item)| {
                 if let Some(input) = item.as_any().downcast_ref::<Input>() {
-                    Some((*id, input.get_position(&self.live_data).unwrap()))
+                    Some((*id, input.get_position(&self.data.live_data).unwrap()))
                 } else if let Some(output) = item.as_any().downcast_ref::<Output>() {
-                    Some((*id, output.get_position(&self.live_data).unwrap()))
+                    Some((*id, output.get_position(&self.data.live_data).unwrap()))
                 } else {
                     None
                 }
@@ -188,7 +141,7 @@ impl MyApp {
         // println!("Found {} gates", gates.len());
 
         // Now iterate mutably through each IO item, update all connected wires using only the data collected above
-        for (_id, wire) in self.live_data.iter_mut() {
+        for (_id, wire) in self.data.live_data.iter_mut() {
             if let Some(w) = wire.as_any_mut().downcast_mut::<Wire>() {
                 if w.id == self.holding_wire.unwrap_or(usize::MAX) {
                     // if we are looking at the currently held wire:
@@ -198,19 +151,19 @@ impl MyApp {
                     }
                     //set p1 its source input's position
                     //offset postion with pan area
-                    if let Some(source_pos) = gates.get(&w.source_id) {
+                    if let Some(source_pos) = io_positions.get(&w.source_id) {
                         let source_pos_moved = *source_pos - pan_center.to_vec2();
                         w.set_p1(source_pos_moved);
                     }
                 }
 
                 if w.connected {
-                    if let Some(source_pos) = gates.get(&w.source_id) {
+                    if let Some(source_pos) = io_positions.get(&w.source_id) {
                         //offset postion with pan area
                         let source_pos_moved = *source_pos - pan_center.to_vec2();
                         let mut dest_pos_moved = w
                             .dest
-                            .and_then(|dest_id| gates.get(&dest_id).cloned())
+                            .and_then(|dest_id| io_positions.get(&dest_id).cloned())
                             .unwrap_or(source_pos_moved);
                         dest_pos_moved = dest_pos_moved - pan_center.to_vec2();
                         w.set_positions(source_pos_moved, dest_pos_moved);
@@ -218,122 +171,6 @@ impl MyApp {
                 }
             }
         }
-    }
-
-    fn update_logicals(&mut self, ctx: &Context) {
-        // Update the logical states of all gates and wires
-
-        // Step 1: Collect all inputs and their current states
-        let input_states = self.collect_input_states();
-
-        // Step 2: Process all gates and collect their outputs
-        let gate_outputs = self.process_gates(&input_states);
-
-        // Step 3: Update outputs and propagate through wires
-        let wire_signals = self.update_outputs_and_wires(&gate_outputs);
-
-        // Step 4: Apply wire signals to inputs
-        self.apply_wire_signals_to_inputs(&wire_signals);
-
-        ctx.request_repaint();
-    }
-
-    fn collect_input_states(&self) -> HashMap<usize, bool> {
-        self.live_data
-            .iter()
-            .filter_map(|(id, item)| {
-                item.as_any()
-                    .downcast_ref::<Input>()
-                    .map(|input| (*id, input.signal))
-            })
-            .collect()
-    }
-
-    fn process_gates(&mut self, input_states: &HashMap<usize, bool>) -> HashMap<usize, bool> {
-        let mut gate_outputs = HashMap::new();
-
-        for (_gate_id, item) in self.live_data.iter_mut() {
-            if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
-                // Gather inputs for this specific gate
-                let gate_inputs: HashMap<usize, bool> = gate
-                    .ins
-                    .keys()
-                    .filter_map(|input_id| {
-                        input_states
-                            .get(input_id)
-                            .map(|&signal| (*input_id, signal))
-                    })
-                    .collect();
-
-                // Process gate and collect outputs
-                if let Ok(outputs) = item.tick(gate_inputs) {
-                    gate_outputs.extend(outputs);
-                }
-            }
-        }
-
-        gate_outputs
-    }
-
-    fn update_outputs_and_wires(
-        &mut self,
-        gate_outputs: &HashMap<usize, bool>,
-    ) -> HashMap<usize, bool> {
-        let mut input_signals = HashMap::new();
-
-        for (&output_id, &signal) in gate_outputs {
-            // Update the output signal
-            if let Some(output) = self.get_output_mut(output_id) {
-                output.signal = signal;
-
-                // Process all wires connected to this output
-                let wire_ids = output.out_wire_ids.clone();
-                for wire_id in wire_ids {
-                    if let Some(wire) = self.get_wire_mut(wire_id) {
-                        wire.set_signal(signal);
-
-                        // If wire has a destination, record the signal for that input
-                        if let Some(dest_input_id) = wire.dest {
-                            input_signals.insert(dest_input_id, signal);
-                        }
-                    }
-                }
-            }
-        }
-
-        input_signals
-    }
-
-    fn apply_wire_signals_to_inputs(&mut self, wire_signals: &HashMap<usize, bool>) {
-        //every input must be updated, even if signals are not present in wire_signals
-        for (input_id, input) in self.live_data.iter_mut() {
-            if let Some(input) = input.as_any_mut().downcast_mut::<Input>() {
-                // Set the input signal based on wire signals or default to false
-                input.signal = wire_signals.get(&input_id).cloned().unwrap_or(false);
-            }
-        }
-    }
-
-    // Helper methods for cleaner access
-    fn get_output_mut(&mut self, id: usize) -> Option<&mut Output> {
-        self.live_data
-            .get_mut(&id)?
-            .as_any_mut()
-            .downcast_mut::<Output>()
-    }
-
-    fn get_wire_mut(&mut self, id: usize) -> Option<&mut Wire> {
-        self.live_data
-            .get_mut(&id)?
-            .as_any_mut()
-            .downcast_mut::<Wire>()
-    }
-
-    fn get_input_mut(&mut self, id: usize) -> Option<&mut Input> {
-        self.live_data
-            .get_mut(&id)?
-            .as_any_mut()
-            .downcast_mut::<Input>()
     }
 
     fn apply_ui_events(&mut self) {
@@ -346,7 +183,7 @@ impl MyApp {
             match clicked {
                 UiEvent::ClickedGate(id, _, true) => {
                     // If a gate was clicked, toggle its state
-                    if let Some(item) = self.live_data.get_mut(&id) {
+                    if let Some(item) = self.data.live_data.get_mut(&id) {
                         if let Some(gate) = item.as_any_mut().downcast_mut::<Gate>() {
                             println!("Clicked on Gate: {:?}", id);
                             gate.click_on();
@@ -364,13 +201,13 @@ impl MyApp {
                 }
                 UiEvent::ClickedIO(id, pos, true) => {
                     //primary click on an IO item
-                    let kind = self.live_data.get(&id).unwrap().get_kind();
+                    let kind = self.data.live_data.get(&id).unwrap().get_kind();
 
                     match kind {
                         LogicalKind::IO(IOKind::Input) => {
                             println!("Left-Clicked on Input: {:?}", kind);
                             //check if this input already has a wire connected
-                            let in_wire_id: Option<usize> = self
+                            let in_wire_id: Option<usize> = self.data
                                 .live_data
                                 .get(&id)
                                 .unwrap()
@@ -385,7 +222,7 @@ impl MyApp {
                                     //connect the wire to the input
                                     println!("Connecting wire to input: {:?}", kind);
                                     self.holding_wire = None;
-                                    let wire = self
+                                    let wire = self.data
                                         .live_data
                                         .get_mut(&wire_id)
                                         .unwrap()
@@ -398,7 +235,7 @@ impl MyApp {
                                     wire.dest = Some(id);
                                     wire.connected = true; // mark the wire as connected
 
-                                    self.live_data
+                                    self.data.live_data
                                         .get_mut(&id)
                                         .unwrap()
                                         .as_any_mut()
@@ -420,7 +257,7 @@ impl MyApp {
                                 // println!("Creating wire from clicked IO: {:?}", id);
                                 let new_wire = Wire::from_io(id, pos);
 
-                                self.live_data
+                                self.data.live_data
                                     .get_mut(&id)
                                     .unwrap()
                                     .as_any_mut()
@@ -430,12 +267,12 @@ impl MyApp {
                                     .push(new_wire.id);
 
                                 self.holding_wire = Some(new_wire.id);
-                                self.live_data.insert(new_wire.id, new_wire);
+                                self.data.live_data.insert(new_wire.id, new_wire);
                             } else {
                                 let wire_id = self.holding_wire.take().unwrap();
                                 //reconnect the wire using this output as the new source
                                 let old_output = self
-                                    .live_data
+                                    .data.live_data
                                     .get_mut(&wire_id)
                                     .unwrap()
                                     .as_any_mut()
@@ -446,7 +283,7 @@ impl MyApp {
 
                                 if let Some(wire_id) = self.holding_wire {
                                     println!("Reconnecting wire to output: {:?}", id);
-                                    let wire = self
+                                    let wire = self.data
                                         .live_data
                                         .get_mut(&wire_id)
                                         .unwrap()
@@ -467,7 +304,7 @@ impl MyApp {
                     //secondary click on an IO item
                     // If an IO was clicked with a secondary click, if a wire is connected, put wire in hand
 
-                    if let Some(item) = self.live_data.get_mut(&id) {
+                    if let Some(item) = self.data.live_data.get_mut(&id) {
                         if let Some(input) = item.as_any_mut().downcast_mut::<Input>() {
                             //if this successfully downcasts to an Input
                             // If an input was right-clicked, take the wire if it exists
@@ -477,7 +314,7 @@ impl MyApp {
                                 self.holding_wire = Some(wire_id);
                                 println!("Taking wire from Input: {:?}", id);
                                 //set the wires dest to none
-                                if let Some(wire) = self.live_data.get_mut(&wire_id) {
+                                if let Some(wire) = self.data.live_data.get_mut(&wire_id) {
                                     if let Some(wire) = wire.as_any_mut().downcast_mut::<Wire>() {
                                         println!("Wire taken from Input: {:?}", id);
                                         wire.dest = None; // Disconnect the wire from the input
@@ -508,18 +345,18 @@ impl MyApp {
         }
         // If we have a queued removal id, remove the item from live
         if let Some(wire_id) = queued_removal_id {
-            if let Some(mut item) = self.live_data.remove(&wire_id) {
+            if let Some(mut item) = self.data.live_data.remove(&wire_id) {
                 if let Some(wire) = item.as_any_mut().downcast_mut::<Wire>() {
                     // Remove the wire from any connected inputs
                     if let Some(input_id) = wire.dest {
-                        if let Some(input) = self.live_data.get_mut(&input_id) {
+                        if let Some(input) = self.data.live_data.get_mut(&input_id) {
                             if let Some(input) = input.as_any_mut().downcast_mut::<Input>() {
                                 input.source_wire_id = None; // Disconnect the wire from the input
                             }
                         }
                     }
                     // Remove the wire from any connected outputs
-                    if let Some(item2) = self.live_data.get_mut(&wire.source_id) {
+                    if let Some(item2) = self.data.live_data.get_mut(&wire.source_id) {
                         if let Some(output) = item2.as_any_mut().downcast_mut::<Output>() {
                             output.out_wire_ids.retain(|&x| x != wire_id); // Remove the wire from the output
                         }
@@ -528,6 +365,10 @@ impl MyApp {
             }
         }
     }
+
+
+
+
 }
 
 impl eframe::App for MyApp {
@@ -538,8 +379,9 @@ impl eframe::App for MyApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        let theme = self.available_themes.first().unwrap().clone();
+        let (name, theme) = self.data.available_themes.iter().next().unwrap().clone();
         if !self.theme_set {
             self.set_theme(ctx, &theme);
             self.theme_set = true;
@@ -547,7 +389,7 @@ impl eframe::App for MyApp {
 
         // determine outputs for all logicals based on their inputs and their TERM
         self.apply_ui_events();
-        self.update_logicals(ctx);
+        self.data.update_logicals(ctx);
 
         egui::SidePanel::left("Tools").show(ctx, |ui| {
             ui.set_max_width(SIDE_PANEL_WIDTH);
@@ -557,16 +399,16 @@ impl eframe::App for MyApp {
                 //display all saved gates in a vertical list
                 // Add a button to create a new gate
                 if ui.button("New Chip").clicked() {
-                    let new_chip = PrimitiveTemplate::from_values("New Chip", 0, 0);
-                    self.saved.push(new_chip);
-                    data::Data::save_chip(&self.live_data);
+                    let new_chip = ChipDefenition::create_blank_chip("New Chip".to_string());
+                    self.data.saved_chips.push(new_chip);
+                    data::Data::save_chip(&self.data.live_data);
                 };
 
                 //two "columns" first 80% th width for chip name, second 20% width for trash icon
                 let mut idx = 0;
                 let mut queue_rem: Option<usize> = None;
 
-                for g in &self.saved {
+                for g in &self.data.saved_chips {
                     ui.horizontal(|ui| {
                         ui.add(g.make_toolbox_widget());
 
@@ -578,14 +420,15 @@ impl eframe::App for MyApp {
                         if ui.button("Delete").clicked() {
                             // Remove the gate from the saved gates
                             queue_rem = Some(idx);
-                            data::Data::save_chip(&self.live_data);
+                            data::Data::save_chip(&self.data.live_data);
                         }
                         idx += 1;
                     });
                 }
+                
                 // Remove the gate from the saved gates
                 if queue_rem.is_some() {
-                    self.saved.remove(idx - 1);
+                    self.data.saved_chips.remove(idx - 1);
                 };
             })
         });
@@ -654,9 +497,9 @@ impl eframe::App for MyApp {
                                                     world_pos,
                                                 );
 
-                                                gate.create_io(&mut self.live_data);
+                                                gate.create_io(&mut self.data.live_data);
 
-                                                self.live_data.insert(
+                                                self.data.live_data.insert(
                                                     // Create a new gate at the world position
                                                     gate.id,
                                                     Box::new(gate),
@@ -717,33 +560,16 @@ impl eframe::App for MyApp {
                                     if ui.button("Yes").clicked() {
                                         self.trying_save = false;
                                         // Clear the live data
-                                        self.live_data.clear();
+                                        self.data.live_data.clear();
                                         self.pan_center = Pos2::new(0.0, 0.0);
                                         self.dragging_gate = None;
                                         self.holding_wire = None;
 
-                                        let mut copy_data = HashMap::new();
-                                        for (id, item) in self.live_data.iter_mut() {
 
-                                            if let gate= item.as_any()
-                                            .downcast_ref::<Gate>(){
-                                                copy_data.insert(*id, gate.clone());
-                                            }
-                                            else if let wire = item.as_any()
-                                            .downcast_ref::<Wire>(){
-                                                copy_data.insert(*id, wire.clone());
-                                            }
-                                            else if let input = item.as_any()
-                                            .downcast_ref::<Input>(){
-                                                copy_data.insert(*id, input.clone());
-                                            }
-                                            else if let output = item.as_any()
-                                            .downcast_ref::<Output>(){
-                                                copy_data.insert(*id, output.clone());
-                                            }
-                                        }
-
-                                        let new_chip = ChipDefenition::create_chip_from_board(, "New_Chip".to_string());
+                                        let new_chip = ChipDefenition::from_live_data(
+                                            &self.data.live_data,
+                                            "New Chip".to_string()
+                                        );
 
 
                                         println!("Cleared the board");
@@ -774,7 +600,7 @@ impl eframe::App for MyApp {
                         ui.vertical(|ui| {
                             if ui.button("Clear Board").clicked() {
                                 // Clear the live data
-                                self.live_data.clear();
+                                self.data.live_data.clear();
                                 self.pan_center = Pos2::new(0.0, 0.0);
                                 self.dragging_gate = None;
                                 self.holding_wire = None;
@@ -810,10 +636,10 @@ impl eframe::App for MyApp {
 
                     // draw logic here using `pan_center`
                     // Collect the keys first to avoid borrowing issues
-                    let live_data_keys: Vec<usize> = self.live_data.keys().cloned().collect();
+                    let live_data_keys: Vec<usize> = self.data.live_data.keys().cloned().collect();
                     for key in live_data_keys {
                         // Use get_mut for mutable access
-                        if let Some(pan_item) = self.live_data.get(&key) {
+                        if let Some(pan_item) = self.data.live_data.get(&key) {
                             let kind = pan_item.get_kind();
                             match kind {
                                 LogicalKind::Gate(_) => {
@@ -839,7 +665,7 @@ impl eframe::App for MyApp {
                                         let response = pan_item.show(
                                             ui,
                                             self.event_sender.clone(),
-                                            &self.live_data,
+                                            &self.data.live_data,
                                             &self.color_values,
                                         );
                                         if response.drag_started()
@@ -877,7 +703,7 @@ impl eframe::App for MyApp {
                                         pan_item.show(
                                             ui,
                                             self.event_sender.clone(),
-                                            &self.live_data,
+                                            &self.data.live_data,
                                             &self.color_values,
                                         );
                                     })
@@ -892,7 +718,7 @@ impl eframe::App for MyApp {
                                         pan_item.show(
                                             ui,
                                             self.event_sender.clone(),
-                                            &self.live_data,
+                                            &self.data.live_data,
                                             &self.color_values,
                                         );
                                     })
@@ -903,20 +729,18 @@ impl eframe::App for MyApp {
                     }
                     self.pan_center = pan_center; // update AFTER the widget runs
 
-                    if self.dragging_gate.is_some() {
+                    if let Some(gate_index)= self.dragging_gate {
                         // If dragging a gate, update its position
                         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
                             if let Some(pan_area_rect) = self.pan_area_rect {
                                 if pan_area_rect.contains(pointer_pos) {
                                     // Update the position of the dragging gate
-                                    if let Some(index) = self.dragging_gate {
-                                        if let Some(gate) = self.live_data.get_mut(&index) {
+                                        if let Some(gate) = self.data.live_data.get_mut(&gate_index) {
                                             gate.set_position(
                                                 pointer_pos + self.pan_center.to_vec2(),
                                             )
                                             .unwrap();
                                         }
-                                    }
                                 }
                             }
                         }

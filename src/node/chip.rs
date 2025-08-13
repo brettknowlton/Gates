@@ -1,78 +1,142 @@
 use crossbeam::channel::Sender;
 
-use crate::gate::GridVec2;
+use crate::{gate::GridVec2, MyApp};
 
 use super::*;
 
 
 
-
+#[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 pub struct ChipDefenition {
     pub id: usize,
     pub name: String,
     pub position: Option<GridVec2>, // Position in the grid
 
-    pub sub_data: HashMap<usize, Box<dyn Logical>>, // Sub-gates within the chip
+    pub sub_gates: HashMap<usize, Gate>, // Sub-gates within the chip
+    pub sub_wires: HashMap<usize, Wire>, // Wires within the chip
+    pub sub_inputs: HashMap<usize, Input>, // Inputs within the chip
+    pub sub_outputs: HashMap<usize, Output>, // Outputs within the chip
+    pub sub_chips: HashMap<usize, ChipDefenition>, // Sub-chips within the chip
 
     pub n_in: usize,
-    pub ins: HashMap<usize, bool>, //bool represents the interpreted input state, this will be passed to the gate on its tick() function
+    pub chip_ins: HashMap<usize, bool>, //bool represents the interpreted input state, this will be passed to the gate on its tick() function
 
     pub n_out: usize,
-    pub outs: HashMap<usize, bool>,
+    pub chip_outs: HashMap<usize, bool>,
 
 }
 
 impl ChipDefenition{
-    fn create_chip_from_board(board_data: HashMap<usize, Box<dyn Logical>>, name: String) -> Self {
-
-
-        let mut c= ChipDefenition {
-            id: usize::MAX, // Default ID, should be set later
+    pub fn create_blank_chip(name: String) -> Self {
+        ChipDefenition {
+            id: MyApp::next_id(),
             name,
             position: None,
-            sub_data: board_data,
+            sub_gates: HashMap::new(),
+            sub_wires: HashMap::new(),
+            sub_inputs: HashMap::new(),
+            sub_outputs: HashMap::new(),
+            sub_chips: HashMap::new(),
+
+
+
             n_in: 0,
-            ins: HashMap::new(),
+            chip_ins: HashMap::new(),
             n_out: 0,
-            outs: HashMap::new(),
-        };
-        c= c.create_io_from_primitives();
-        c
+            chip_outs: HashMap::new(),
+        }
+        
+    }
+
+    pub fn make_toolbox_widget(&self) -> Button<'static> {
+        //square selectable button that takes a label and number of inputs and outputs
+        let var = Button::selectable(
+            false, // or set to true if you want it selected by default
+            self.name.clone(),
+        )
+        .min_size(vec2(110., 110.))
+        .corner_radius(10.)
+        .sense(Sense::drag())
+        .sense(Sense::click());
+        return var;
+    }
+
+    fn add_sub_gate(&mut self, gate: Gate) {
+        let id = gate.get_id();
+        self.sub_gates.insert(id, gate);
+    }
+
+    fn next_chip_id() -> usize {
+        MyApp::next_id()
+    }
+
+    pub fn from_live_data(board_data: &HashMap<usize, Box<dyn Logical>>, name: String) -> Self {
+        //for item in board_data
+
+        //try to downcast to each logical type wire, gate, in, or out, and add the item to this chip's correct hashmap
+        let mut chip = ChipDefenition::create_blank_chip(name);
+        let io= ChipDefenition::get_io_from_gates(board_data);
+
+        chip.chip_ins = io.0;
+        chip.chip_outs = io.1;
+        chip.n_in = chip.chip_ins.len();
+        chip.n_out = chip.chip_outs.len();
+
+
+        for (id, item) in board_data {
+            match item.get_kind() {
+
+                LogicalKind::Gate(_) => {
+                    if let Some(gate) = item.as_any().downcast_ref::<Gate>() {
+                        chip.add_sub_gate(gate.clone());
+                    }
+                }
+                LogicalKind::Wire => {
+                    if let Some(wire) = item.as_any().downcast_ref::<Wire>() {
+                        chip.sub_wires.insert(*id, wire.clone());
+                    }
+                }
+                LogicalKind::IO(IOKind::Input) => {
+                    if let Some(input) = item.as_any().downcast_ref::<Input>() {
+                        chip.sub_inputs.insert(*id, input.clone());
+                    }
+                }
+                LogicalKind::IO(IOKind::Output) => {
+                    if let Some(output) = item.as_any().downcast_ref::<Output>() {
+                        chip.sub_outputs.insert(*id, output.clone());
+                    }
+                }
+                _ => {
+                    println!("Unknown logical kind: {:?}", item.get_kind());
+                }
+            }
+        }
+
+        chip
     }
 
 
-    fn create_io_from_primitives(mut self)->Self{
-        let mut ins= HashMap::new();
-        let mut outs= HashMap::new();
-
-        for (id, logical) in &self.sub_data {
-            if logical.get_kind().is_gate() {
-                match logical.get_kind() {
-                    LogicalKind::Gate(GateKind::Primitive(primitive_kind)) => {
-                        match primitive_kind {
-                            PrimitiveKind::TOGGLE => {
-                                // Create an input for the toggle
-                                let state= logical.as_any().downcast_ref::<Gate>().unwrap().state;
-                                ins.insert(id.clone(), state); // Default to false
-                            }
-                            PrimitiveKind::LIGHT => {
-                                // Create an output for the light
-                                let state = logical.as_any().downcast_ref::<Gate>().unwrap().state;
-                                outs.insert(id.clone(), state); // Default to false
-                            }
-                            _ => {}
+    fn get_io_from_gates(board_data: &HashMap<usize, Box<dyn Logical>>)-> (HashMap<usize, bool>, HashMap<usize, bool>) {
+        let (ins, outs) = board_data.iter().fold(
+            (HashMap::new(), HashMap::new()),
+            |(mut ins, mut outs), (id, item)| {
+                match item.get_kind() {
+                    LogicalKind::Gate(GateKind::Primitive(PrimitiveKind::TOGGLE)) => {
+                        if let Some(input) = item.as_any().downcast_ref::<Input>() {
+                            ins.insert(*id, input.signal);
                         }
-                    },
+                    }
+                    LogicalKind::IO(IOKind::Output) => {
+                        if let Some(output) = item.as_any().downcast_ref::<Output>() {
+                            outs.insert(*id, output.signal);
+                        }
+                    }
                     _ => {}
                 }
-            } 
-        }
-        self.n_in = ins.len();
-        self.ins = ins;
-        self.n_out = outs.len();
-        self.outs = outs;
-        self
-        
+                (ins, outs)
+            },
+        );
+        (ins, outs)
     }
 }
 
@@ -110,6 +174,6 @@ impl Logical for ChipDefenition {
 
 
     fn get_kind(&self) -> LogicalKind {
-        LogicalKind::Chip(self.name.clone())
+        LogicalKind::Gate(GateKind::Custom(self.name.clone()))
     }
 }

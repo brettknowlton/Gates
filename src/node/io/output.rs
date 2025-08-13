@@ -34,6 +34,22 @@ impl Output {
     pub fn name_output(&mut self, name: String) {
         self.name = Some(name);
     }
+    pub fn from_gate(gate: &Gate, n_index: usize) -> Self {
+        //assert this is a light gate
+        assert!(gate.get_kind().is_primitive_kind(PrimitiveKind::LIGHT), "Output can only be created from a light gate");
+        //create an output from a gate, this is used when creating chips
+        // Outputs in gates are always at index 0
+        // and have the same ID as the gate
+
+        Output {
+            id: gate.get_id(),
+            index: n_index, // Outputs in gates are always at index 0
+            name: Some(gate.name.clone()),
+            parent_id: Some(gate.get_id()),
+            signal: false,
+            out_wire_ids: Vec::new(), // Initialize with an empty vector
+        }
+    }
 
     pub fn get_position(
         &self,

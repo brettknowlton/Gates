@@ -15,7 +15,7 @@ const GATE_WIDTH: f32 = 100.0;
 #[derive(serde::Deserialize, serde::Serialize, Default, Clone, Debug)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct Gate {
-    pub label: String,
+    pub name: String,
     pub id: usize, //index of this gate in the PanArea
     pub position: GridVec2,
     pub size: GridVec2,
@@ -164,7 +164,7 @@ impl Logical for Gate {
         ui.painter().text(
             center_rect.center(),
             Align2::CENTER_CENTER,
-            self.label.clone(),
+            self.name.clone(),
             TextStyle::Monospace.resolve(ui.style()),
             Color32::BLACK,
         );
@@ -204,7 +204,7 @@ impl Gate {
         let n_outs = 0;
 
         let g = Gate {
-            label: name,
+            name,
             id,
             position: GridVec2::new(0.0, 0.0),
             size: GridVec2::new(150.0, 110.0),
@@ -235,7 +235,7 @@ impl Gate {
 
     fn from_template(t: &PrimitiveTemplate, pos: Pos2) -> Gate {
         let g = Gate {
-            label: t.label.clone(),
+            name: t.label.clone(),
             id: MyApp::next_id(),
             position: GridVec2::new(pos.x, pos.y),
             size: GridVec2::new(150.0, 110.0),
@@ -363,7 +363,7 @@ impl Gate {
                 kind = GateKind::Primitive(PrimitiveKind::NOR);
             }
             "Custom" => {
-                kind = GateKind::Custom;
+                kind = GateKind::Custom(label.clone());
             }
             _ => {
                 kind = GateKind::Primitive(PrimitiveKind::None);
@@ -371,7 +371,7 @@ impl Gate {
         }
 
         let g = Gate {
-            label,
+            name: label,
             position: GridVec2::new(0.0, 0.0),
             id: id,
 
@@ -394,7 +394,7 @@ pub enum GateKind {
     #[default]
     None,
     Primitive(PrimitiveKind),
-    Custom,
+    Custom(String),
 }
 
 impl Display for GateKind {
@@ -402,7 +402,7 @@ impl Display for GateKind {
         match self {
             GateKind::None => write!(f, "None"),
             GateKind::Primitive(kind) => write!(f, "{}", kind),
-            GateKind::Custom => write!(f, "Custom"),
+            GateKind::Custom(st) => write!(f, "Custom: {}", st),
         }
     }
 }
