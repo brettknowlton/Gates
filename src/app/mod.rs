@@ -400,8 +400,7 @@ impl eframe::App for MyApp {
                 // Add a button to create a new gate
                 if ui.button("New Chip").clicked() {
                     let new_chip = ChipDefenition::create_blank_chip("New Chip".to_string());
-                    self.data.saved_chips.push(new_chip);
-                    data::Data::save_to_chip_file(&self.data.live_data);
+                    //would you like to save the current chip etc... todo!
                 };
 
                 //two "columns" first 80% th width for chip name, second 20% width for trash icon
@@ -420,7 +419,7 @@ impl eframe::App for MyApp {
                         if ui.button("Delete").clicked() {
                             // Remove the gate from the saved gates
                             queue_rem = Some(idx);
-                            data::Data::save_to_chip_file(&self.data.live_data);
+                            self.data.save_to_chip_file();
                         }
                         idx += 1;
                     });

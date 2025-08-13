@@ -68,7 +68,6 @@ impl LogicalKind {
     pub fn is_primitive(&self) -> bool {
         matches!(self, LogicalKind::Gate(GateKind::Primitive(_)))
     }
-
     pub fn is_primitive_kind(&self, kind: PrimitiveKind) -> bool {
         if let LogicalKind::Gate(GateKind::Primitive(primitive_kind)) = self {
             *primitive_kind == kind
@@ -99,6 +98,54 @@ impl LogicalKind {
             Err("Not a gate kind".into())
         }
     }
+
+
+    //super useful helper function to serialize any kind of gate based on its kind:
+    pub fn serialize_logical(&self, hash_item: (usize, &Box::<dyn Logical>)) -> Result<String, Box<dyn Error>> {
+        match self{
+            LogicalKind::Gate(gate_kind) => {
+                match gate_kind {
+                    GateKind::Primitive(_) => {
+                        //try to downcast to a gate
+                        let gate = hash_item.1.as_any().downcast_ref::<Gate>().unwrap();
+                        Ok(serde_json::to_string(&gate)?)
+                    }
+                    GateKind::Custom(custom_gate) => {
+                        let gate = custom_gate.clone();
+                        Ok(serde_json::to_string(&gate)?)
+                    }
+                    _ => {
+                        // No gate to serialize
+                        Err("No gate to serialize".into())
+                    }
+                }
+            }
+            LogicalKind::Wire => {
+                //try to downcast to a wire
+                let wire = hash_item.1.as_any().downcast_ref::<Wire>().unwrap();
+                Ok(serde_json::to_string(&wire)?)
+            }
+            LogicalKind::IO(io_kind) => {
+                match io_kind {
+                    IOKind::Input => {
+                        let input = hash_item.1.as_any().downcast_ref::<Input>().unwrap();
+                        Ok(serde_json::to_string(&input)?)
+                    }
+                    IOKind::Output => {
+                        let output = hash_item.1.as_any().downcast_ref::<Output>().unwrap();
+                        Ok(serde_json::to_string(&output)?)
+                    }
+                }
+            }
+            LogicalKind::Chip(name) => {
+                //try to downcast to a chip
+                let chip = hash_item.1.as_any().downcast_ref::<ChipDefenition>().unwrap();
+                Ok(serde_json::to_string(&chip)?)
+            }
+
+        }
+    }
+
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
